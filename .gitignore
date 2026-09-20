@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 运行产物（归档根目录与日志不进版本库；fixture 在 tests/fixtures/ 下保留）
+/reports/
+*.log
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+
+# 本地配置与密钥
+.env
+config.local.toml
+
+# 探测产物中间文件（fixture 由脚本整理后放入 tests/fixtures/ 才提交）
+tools/probe/out/
+
+# IDE / OS
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store
