@@ -1,0 +1,18 @@
+{
+  "record_count": "24",
+  "rows_returned": 24,
+  "params": {
+    "lang": "ZH",
+    "category": "0",
+    "market": "SEHK",
+    "searchType": "1",
+    "documentType": "-1",
+    "t1code": "40000",
+    "t2Gcode": "-2",
+    "t2code": "-2",
+    "stockId": "7609",
+    "title": "",
+    "from": "20160920",
+    "to": "20260920"
+  }
+}

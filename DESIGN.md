@@ -2,13 +2,13 @@
 
 | 项目 | 内容 |
 |---|---|
-| 版本 | v1.2（迭代交付版） |
+| 版本 | v1.3（I0 契约回填） |
 | 日期 | 2026-09-20 |
-| 状态 | 设计阶段，尚无实现与联调结果 |
+| 状态 | 设计阶段；三市场来源契约已于 I0 实测验证并回填（样本见 tests/fixtures/，结论见 docs/SOURCE_VERIFICATION.md），尚无实现代码 |
 | 上游 | [ARCHITECTURE.md](./ARCHITECTURE.md)、[REQUIREMENTS.md](./REQUIREMENTS.md) |
 | 配套 | [ITERATION_PLAN.md](./ITERATION_PLAN.md)、[HTTP_API.md](./HTTP_API.md)、[REVIEW.md](./REVIEW.md)、[ANALYSIS_ROADMAP.md](./ANALYSIS_ROADMAP.md) |
 
-本文修订原 v1.0 的矛盾及实现缺口，评审依据见 REVIEW.md。所有“待实测”端点、分类值、响应形态仍是候选契约，不可当作已验证规范；实现阶段用真实样本回填。后续财报内容分析不在本文一期实现范围内。
+本文修订原 v1.0 的矛盾及实现缺口，评审依据见 REVIEW.md。§6/§7/§8 的来源契约已于 2026-09-20 在 Docker 容器内实测验证并回填；仍标注”待实测”的仅剩实现期确认项（北交所 column、CN Cookie 是否强制等）。后续财报内容分析不在本文一期实现范围内。
 
 ## 1. 模块与依赖方向
 
@@ -96,41 +96,61 @@ class BaseMarketAdapter:
 
 发现过程按公告日分页时，不能在看到 N 条后就假定已取得最新 N 个报告期。必须完成声明检索窗口的分页，再排序；窗口不足 N 时有界扩窗。默认最多回溯 10 年、每证券 100 次发现请求（均可配置，包含检索/验证请求）；预算到限即 truncated，不宣称完整。未来按日期区间补取可单独演进。
 
-## 6. CN：巨潮适配器候选契约
+## 6. CN：巨潮适配器（I0 已验证契约，2026-09-20）
 
-| 步骤 | 候选请求与关键字段 |
+| 步骤 | 已验证请求与关键字段 |
 |---|---|
-| resolve | POST `https://www.cninfo.com.cn/new/information/topSearch/query`，表单 keyWord / maxNum；精确匹配 code，读取 orgId |
-| list | POST `https://www.cninfo.com.cn/new/hisAnnouncement/query`，表单 stock=`code,orgId`、pageNum/pageSize、column、category、seDate、tabName=fulltext、isHLtitle=false |
-| 文件 | `adjunctUrl` 与已验证的 `https://static.cninfo.com.cn/` 拼接；source_id 为规范化 adjunctUrl |
+| resolve | POST `http://www.cninfo.com.cn/new/information/topSearch/query`，表单 keyWord/maxNum；返回数组按 code 精确匹配读取 orgId（实测沪市 `gssh0600519`、深市 `gssz0000001`——不推导、直接使用返回值）；不存在的代码返回 200 + `[]`（见 fixture `topsearch_nomatch`） |
+| list | POST `http://www.cninfo.com.cn/new/hisAnnouncement/query`，表单 stock=`code,orgId`、pageNum/pageSize、column、category、seDate、tabName=fulltext、isHLtitle=false |
+| 文件 | `http://static.cninfo.com.cn/` + adjunctUrl（实测 magic `%PDF-`）；source_id 为规范化 adjunctUrl |
 
-定期类别候选：`category_ndbg_szsh;category_bndbg_szsh;category_yjdbg_szsh;category_sjdbg_szsh`。沪深 column 值、Cookie/Referer 要求、HTTPS 跳转及分页终止条件均待实测；不推导 orgId 字符串。
+已验证行为与字段：
 
-保存响应中的 announcementTitle、announcementTime、adjunctUrl 及来源公告 ID（如提供）；源站时间戳转换为 Asia/Shanghai 公告日期，原值保留。按明确标题年份与类型识别 Q1/H1/Q3/FY；非预期标题不按公告时间反推年份。
+- **column**：对沪市股票 `szse` 与 `sse` 返回完全一致（同字节数），统一使用 `szse`；北交所 column 值留待实现期确认；
+- **Cookie/请求头**：先 GET 首页预热（取得 JSESSIONID、SF_cookie_4）后接口畅通；裸 curl 缺 UA/Referer 会 403。是否强制 Cookie 未消融，保守保留预热一次；
+- 分页：`totalAnnouncement` / `hasMore` 驱动 pageNum 递增，取满或窗口耗尽即止；
+- 响应行可用字段（实测）：`announcementId`（稳定公告 ID）、`associateAnnouncement`（关联公告，修订关联线索）、`shortTitle`、`adjunctType`、`adjunctSize`；`announcementTypeName` 实测为 null，不可依赖；
+- **标题形态**（isHLtitle=false 时为”公司名+报告名”、无冒号分隔）：`贵州茅台2026年半年度报告`、`…报告摘要`、`…（英文版）`；**季度标题两种变体并存**——600519 用”第一季度报告”、000001 用”一季度报告”，解析须同时覆盖；
+- `announcementTime` 为毫秒时间戳 → Asia/Shanghai 公告日期，原值保留在 source_metadata。
 
-同一报告期的原稿、更新后全文与更正通知分别分类，不再使用“命中更正/修订就一律排除”的正则。发现页内标题可能带 HTML 高亮，清理显示标签但保留原值作为审计信息。
+同一报告期的原稿、更新后全文与更正通知分别分类（document_role），不使用”命中更正/修订就一律排除”的正则。
 
-## 7. HK：披露易适配器候选契约
+## 7. HK：披露易适配器（I0 已验证契约，2026-09-20）
 
-| 步骤 | 候选请求与关键字段 |
+> **重大契约变化**：旧 `titleSearcherJson.do` 端点已下线（404，fixture 留证）。现行契约为 `titlesearch.xhtml` **GET 深链 + 服务端渲染 HTML**（v1.1 设计的”双重 JSON/数组形态”分析对象已失效）。
+
+| 步骤 | 已验证请求与关键字段 |
 |---|---|
-| resolve | GET `https://www1.hkexnews.hk/search/prefix.do`；callback/lang/type/name/market，精确匹配五位 code，读取 stockId |
-| list | GET `https://www1.hkexnews.hk/search/titleSearcherJson.do`；stockId/fromDate/toDate/lang/sortDir/sortByOptions/rowRange 等 |
-| 文件 | FILE_LINK 使用 URL join 与已验证官方基址拼接，不用字符串重复拼 host；source_id 采用规范化文件路径 |
+| resolve | GET `https://www1.hkexnews.hk/search/prefix.do?callback=callback&lang=ZH&type=A&name=00700&market=SEHK`；JSONP 剥壳（只剥已知包装，绝不 eval）；返回**五位 code**（如 `00016`）与 `stockId`，按 code 精确匹配；不存在代码返回空 `stockInfo`（fixture 留证） |
+| list | GET `https://www1.hkexnews.hk/search/titlesearch.xhtml`，参数：`lang=ZH&category=0&market=SEHK&searchType=1&documentType=-1&t1code=40000&t2Gcode=-2&t2code=-2&stockId=<内部ID>&title=<可空>&from=YYYYMMDD&to=YYYYMMDD`。**有效日期参数是 from/to；fromDate/toDate 会被忽略**（参数矩阵实测） |
+| 文件 | `file_link` 形如 `/listedco/listconews/sehk/2026/0825/2026082500557_c.pdf`，与官方基址 URL join（`_c`=中文版）；source_id 为规范化文件路径 |
 
-`category`、`t1code=40000`、`t2Gcode/t2code` 是原稿候选值，必须证明年报/中报召回及对 ESG/业绩公告的区分。不能因为处于财务分类就判为完整报告；自愿季度报告 QTR-HK 非默认类型，样本验证后才启用。
+**响应解析（服务端渲染 HTML，fixture 含原始页）**：
 
-JSONP 只剥离已知 callback 包装，绝不 eval。外层 result 若为 JSON 字符串，再解码一次；原稿样例为 `[{"res": [...]}]`，应迭代列表元素取 res，不能直接 `inner["res"]`。若真实响应不同，按 fixture 定义合法分支；陌生结构返回 source_contract_changed。recordCnt、rowRange 与翻页/切分日期窗口方式必须实测，固定返回 100 行不能作为完整历史。
+- 总数标记：`共有 N 紀錄`；
+- 结果行 `<tr>` 字段：`發放時間 DD/MM/YYYY HH:MM`（Asia/Hong_Kong）、股份代號（**可能含人民币柜台第二代码如 `00700 80700`，只取主代码**）、股份簡稱、headline 文本（`財務報表/環境、社會及管治資料 - [子類別]`）、文档链接（标题 + PDF href + 附件大小）；
+- **子類別（方括号文本，经 HTML 实体反转义后）是 document_role / doc_type 的权威来源**，优于标题正则：
+  - `[年報]` → ANNUAL；`[中期/半年度報告]` → INTERIM；`[環境、社會及管治資料/報告]` → 排除（非财报正文，但与财报同在 t1=40000，不可只按类别判定）；
+  - t1=10000（公告及通告）下：`[季度業績]` / `[中期業績]` / `[末期業績/…]` → 业绩公告（QTR-HK 相关）；
+- HTML 实体（`&#x2f;` 等）必须先反转义再匹配。
 
-DATE_TIME 按 Asia/Hong_Kong 解析。标题含明确期末年月日时保留该日，不假设 12-31/6-30，也不从自然月份决定财季。只有“二零二四年年報”且无可靠财年截止信息时：类型 ANNUAL，report_period=null，保留并警告。标题类型可识别但日期不明，与标题完全无法证明是财报是两种结果。
+**已验证行为**：
 
-## 8. US：SEC EDGAR
+- 单页返回全部结果：10 年窗口 24 条一次返回；站点显示上限 1000 条（页面配置 `ViewMoreRecords`），超限场景按年切窗，不做 load-more 模拟；
+- **免 Cookie/免预热可直接深链检索**（全新会话消融验证通过）；偶发 TLS 握手层重置（网络抖动），显式重试即可恢复——重试属传输层必选项；
+- **QTR-HK 可行**：`t1=10000` + `title=業績` 可召回季度业绩公告，标题含中文数字明确期末日（”截至二零二六年三月三十一日止三個月業績公佈”）→ 可作为显式类型启用（默认仍不启用，见 REQUIREMENTS §8 决策 1）；
+- **标题形态**：日历年结公司 `中期報告 2026`、`2025 年報`；**非日历年结公司（0016，六月年结）为跨年标签 `2024/25 年報`、`2025/26 中期報告`——标题推不出日历期末日**：doc_type 可定（ANNUAL/INTERIM），`report_period=null + period_source=unknown + 警告`（”未知期不猜测”规则的真实场景，fixture 留证）；
+- PDF 实测 magic `%PDF-1.7`。
 
-1. 用 `https://www.sec.gov/files/company_tickers.json` 构建 ticker→CIK 映射，按来源值精确匹配与明确别名映射；CIK 保留补零形式作身份，归档路径采用源站要求的数值形式。
-2. 请求 `https://data.sec.gov/submissions/CIK{cik:010d}.json`；并行数组必须验证长度和必要字段一致，不能让 zip 静默丢弃错位行。
-3. 读取 recent，必要时读取 filings.files 指向的历史 JSON；历史响应形态按独立 fixture 解析，并验证返回文件名与官方域名。默认窗口可自三年起扩展，不能把三年硬编码成完整历史。
-4. 原文路径：`https://www.sec.gov/Archives/edgar/data/{cik}/{accession去连字符}/{primaryDocument}`；source_id=`accessionNumber/primaryDocument`。Report 保留 accession、原 form、primaryDocument、CIK 及源字段。
-5. 默认支持基础类型 10-Q/10-K/20-F；修订申报归入基础类型并保留原 source_form/is_amendment。是否完整重发须确认，不能把 /A 直接覆盖全文。
+**残留实现期确认项**：更正/补充公告的子类别形态与修订关联表达（探测样本未含），实现时以 `associateAnnouncement` 同思路观察源字段，缺依据则按 notice 处理并警告。
+
+## 8. US：SEC EDGAR（I0 已验证契约，2026-09-20）
+
+1. `https://www.sec.gov/files/company_tickers.json`（实测 10,438 条）构建 ticker→CIK 映射：**类股为连字符格式（BRK-A/BRK-B/BF-B）；GOOG 与 GOOGL 为不同 ticker、同一 CIK**——按 ticker 精确匹配即可，不做点号转换。CIK 保留补零形式作身份。
+2. `https://data.sec.gov/submissions/CIK{cik:010d}.json`：recent 并行数组（实测 AAPL 1001 行、17 键，含 isXBRL/primaryDocument 等）；zip 前必须校验数组等长。**不存在的 CIK 返回 404 + XML 错误体**（data.sec.gov 为对象存储支撑，fixture 留证），按 ResolveError 处理。
+3. `filings.files` 实测存在（`[{name, filingCount, filingFrom, filingTo}]`，Apple 历史段 1247 行、1994–2015）；历史 JSON **顶层即并行数组、无 filings/recent 包裹**；含 `primaryDocument` 字段但**老申报（1990 年代）为空串**——按需读历史时空 primaryDocument 以 `Archives/edgar/data/{cik}/{acc去连字符}/index.json` 兜底或跳过并警告。默认场景（最新 N 份）recent 必然覆盖，不触历史文件。
+4. 原文路径：`https://www.sec.gov/Archives/edgar/data/{cik}/{accession去连字符}/{primaryDocument}`；source_id=`accessionNumber/primaryDocument`。**reportDate 为权威期末，不可假设日历季度**（实测 Apple 财年 9 月止：10-K reportDate=2025-09-27）。
+5. 默认支持基础类型 10-Q/10-K/20-F；修订申报（10-K/A、10-Q/A 实测存在于 recent）归入基础类型并保留 source_form/is_amendment，不能把 /A 直接覆盖全文。
 
 reportDate 非空且合法时作为期末；缺失则 null。filingDate 仍为来源提交日期，不转为服务器本地日期，也不替代 reportDate。10-K 不作为独立 Q4 指标数据使用。
 
@@ -148,7 +168,14 @@ reportDate 非空且合法时作为期末；缺失则 null。filingDate 仍为�
 | HK | ANNUAL / INTERIM / QTR-HK（非默认） | 明确期末日或可靠来源字段，禁止财年猜测 |
 | US | 10-Q / 10-K / 20-F | 来源 reportDate；未知留空 |
 
-`period.py` 提供日期校验和中文年份数字转换等通用函数；市场标题规则放适配器或市场专用模块。繁简体需要实际字符/转换覆盖，不能在注释说兼容而正则只含“個”。
+`period.py` 提供日期校验和中文年份数字转换等通用函数；市场标题规则放适配器或市场专用模块。繁简体需要实际字符/转换覆盖，不能在注释说兼容而正则只含”個”。
+
+I0 实测补充（2026-09-20，样本见 tests/fixtures/）：
+
+- CN 标题变体：`第一季度报告`（600519）与 `一季度报告`（000001）**并存**；公司名直接作前缀、无冒号；
+- HK 文档角色以检索结果的**子类别文本**为权威（`[年報]`/`[中期/半年度報告]`/`[環境、社會及管治資料/報告]`），标题正则仅辅助；HTML 实体（`&#x2f;`）先反转义；
+- HK 非日历年结公司标题为跨年标签（`2024/25 年報`）：doc_type 可定，日历期末不可得 → null + unknown + 警告；
+- HK 业绩公告标题含中文数字明确期末（`截至二零二六年三月三十一日止三個月`）：QTR-HK 的 period_source=explicit_title 可行。
 
 已知报告期先倒序，再按 filing_date 倒序、source_id 确定稳定次序；未知报告期单独排最后。filing_date 也未知的候选保留来源顺序信息和警告，不补当前日期。存储排序不能依赖 `~` 或 unknown 文件名前缀。
 
@@ -283,7 +310,7 @@ level = "INFO"
 file = "./reports-fetcher.log"
 ```
 
-CLI 显式参数 > 环境覆盖 > 配置文件 > 默认值；argparse 未提供的参数不得用自身默认值误覆盖配置。API 业务参数以客户端显式值 > 服务生效默认值解析并持久化，资源上限由服务端控制。令牌由外部机密/环境配置映射 client_id，不进示例配置或日志。
+CLI 显式参数 > 环境覆盖 > 配置文件 > 默认值；argparse 未提供的参数不得用自身默认值误覆盖配置。API 业务参数以客户端显式值 > 服务生效默认值解析并持久化，资源上限由服务端控制。令牌由外部机密/环境配置映射 client_id，不进示例配置或日志。容器为主力运行方式（ARCHITECTURE §3）：配置文件经 bind mount（容器内固定 /app/config.toml）、敏感项经环境变量注入；归档根目录与日志目录同样经挂载持久化到宿主机。
 
 来源组包含查询及文件域名，允许列表需实测备案。symbol_map 建议默认 7 天过期；明确的映射失效刷新一次，空结果先区分无报告与错误，不随意删除已有身份关联。
 
@@ -346,6 +373,6 @@ JobService 在事务中校验幂等键并保存生效请求与 queued 状态，�
 
 ## 附录：来源样例维护约定
 
-原稿中的 orgId、stockId、公告日期和 accession 示例均只能作为说明，不能直接视为录制 fixture。实施阶段保存真实响应时附抓取时间、请求参数、预期报告与脱敏说明；不同结构版本各自建 fixture，结构异常必须可检测。
+I0 已于 2026-09-20 录制真实响应样本并存入 `tests/fixtures/`（19 个文件：US×4 / CN×5 / HK×10，清单与脱敏说明见该目录 README）；本文 §6/§7/§8 的示例值与 fixture 一致，可直接作为解析测试基准。HK 旧 `titleSearcherJson.do` 的双重 JSON 形态已随端点下线失效，仅保留 404 证据 fixture；现行 HK 契约为 titlesearch.xhtml 深链 HTML。
 
-测试至少包含 HK `result` 解码后的列表形态，以及 SEC recent 的并行数组与单独历史文件形态。仅保留必要公开元数据；不把 User-Agent 联系信息、Cookie 或服务令牌存入测试样本。
+后续契约变化的处理：probe 复现 → 新增带日期的新 fixture（旧样本保留为结构版本历史）→ 测试按 fixture 分支适配。仅保留必要公开元数据；不把 User-Agent 联系信息、Cookie 或服务令牌存入测试样本。

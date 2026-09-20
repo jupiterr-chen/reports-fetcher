@@ -1,0 +1,49 @@
+{
+  "params": {
+    "lang": "ZH",
+    "category": "0",
+    "market": "SEHK",
+    "searchType": "1",
+    "documentType": "-1",
+    "t1code": "10000",
+    "t2Gcode": "-2",
+    "t2code": "-2",
+    "stockId": "7609",
+    "title": "業績",
+    "from": "20260101",
+    "to": "20260920"
+  },
+  "record_count": "3",
+  "rows": [
+    {
+      "release_datetime": "發放時間: 12/08/2026 16:31",
+      "stock_code": "股份代號: 00700 80700",
+      "stock_name": "股份簡稱: 騰訊控股 騰訊控股－Ｒ",
+      "headline": "公告及通告 - [中期業績]",
+      "subcategory": "中期業績",
+      "title": "截至二零二六年六月三十日止三個月及六個月業績公佈",
+      "file_link": "/listedco/listconews/sehk/2026/0812/2026081200297_c.pdf",
+      "file_size": "941KB"
+    },
+    {
+      "release_datetime": "發放時間: 13/05/2026 16:31",
+      "stock_code": "股份代號: 00700 80700",
+      "stock_name": "股份簡稱: 騰訊控股 騰訊控股－Ｒ",
+      "headline": "公告及通告 - [季度業績]",
+      "subcategory": "季度業績",
+      "title": "截至二零二六年三月三十一日止三個月業績公佈",
+      "file_link": "/listedco/listconews/sehk/2026/0513/2026051300335_c.pdf",
+      "file_size": "845KB"
+    },
+    {
+      "release_datetime": "發放時間: 18/03/2026 16:30",
+      "stock_code": "股份代號: 00700 80700",
+      "stock_name": "股份簡稱: 騰訊控股 騰訊控股－Ｒ",
+      "headline": "公告及通告 - [末期業績 &#x2f; 股息或分派 &#x2f; 暫停辦理過戶登記手續或更改暫停辦理過戶日期]",
+      "subcategory": "末期業績 &#x2f; 股息或分派 &#x2f; 暫停辦理過戶登記手續或更改暫停辦理過戶日期",
+      "title": "截至二零二五年十二月三十一日止年度全年業績公佈",
+      "file_link": "/listedco/listconews/sehk/2026/0318/2026031800389_c.pdf",
+      "file_size": "964KB"
+    }
+  ]
+}

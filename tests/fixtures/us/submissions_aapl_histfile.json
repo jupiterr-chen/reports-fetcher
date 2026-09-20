@@ -1,0 +1,76 @@
+{
+  "url": "CIK0000320193-submissions-001.json",
+  "top_level_keys": [
+    "accessionNumber",
+    "filingDate",
+    "reportDate",
+    "acceptanceDateTime",
+    "act",
+    "form",
+    "fileNumber",
+    "filmNumber",
+    "items",
+    "core_type",
+    "size",
+    "isXBRL",
+    "isInlineXBRL",
+    "isXBRLNumeric",
+    "primaryDocument",
+    "primaryDocDescription"
+  ],
+  "array_lengths": {
+    "accessionNumber": 1247,
+    "filingDate": 1247,
+    "reportDate": 1247,
+    "acceptanceDateTime": 1247,
+    "act": 1247,
+    "form": 1247,
+    "fileNumber": 1247,
+    "filmNumber": 1247,
+    "items": 1247,
+    "core_type": 1247,
+    "size": 1247,
+    "isXBRL": 1247,
+    "isInlineXBRL": 1247,
+    "isXBRLNumeric": 1247,
+    "primaryDocument": 1247,
+    "primaryDocDescription": 1247
+  },
+  "tail_rows": [
+    {
+      "form": "10-Q",
+      "filingDate": "1994-01-26",
+      "reportDate": "1993-12-31",
+      "accessionNumber": "0000320193-94-000002",
+      "primaryDocument": ""
+    },
+    {
+      "form": "424B5",
+      "filingDate": "1994-01-26",
+      "reportDate": "",
+      "accessionNumber": "0000891618-94-000021",
+      "primaryDocument": ""
+    },
+    {
+      "form": "SC 13G/A",
+      "filingDate": "1994-02-10",
+      "reportDate": "",
+      "accessionNumber": "0000950150-94-000252",
+      "primaryDocument": ""
+    },
+    {
+      "form": "SC 13G/A",
+      "filingDate": "1994-02-17",
+      "reportDate": "",
+      "accessionNumber": "0000918983-94-000004",
+      "primaryDocument": ""
+    },
+    {
+      "form": "SC 13G",
+      "filingDate": "1994-02-18",
+      "reportDate": "",
+      "accessionNumber": "0000918983-94-000005",
+      "primaryDocument": ""
+    }
+  ]
+}

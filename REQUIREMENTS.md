@@ -108,7 +108,7 @@
 | NFR-3 | 资源上限：单文件 200 MiB、连接/读取超时、文件与任务 deadline、HTTP 请求体 64 KiB、待处理任务 ≤100 | 超限返回明确错误；不无限重试、不整文件进内存 |
 | NFR-4 | 安全：默认监听 127.0.0.1；非回环强制令牌+HTTPS；文件按 ID → 受控路径映射 + 包含检查；不泄露服务器绝对路径 | HTTP_API §8 验收场景 |
 | NFR-5 | 合规：仅官方公开披露来源；SEC 真实 UA 必配（未配置则 US 功能明确报错）；归档仅供同一使用方内部使用，不再分发 | README/部署说明明示 |
-| NFR-6 | 环境：Python 3.11+；核心依赖 requests；FastAPI/Pydantic/Uvicorn 仅 `server` 安装组；测试依赖独立 | pyproject 安装组验证 |
+| NFR-6 | 环境：Docker 容器化交付为主力（镜像内 Python 3.11+），宿主机仅要求 Docker、不提供 venv 交付路径；核心依赖 requests；FastAPI/Pydantic/Uvicorn 仅 `server` 安装组；测试依赖独立 | 镜像构建 + compose 用例（probe/cli/serve）验证 |
 | NFR-7 | 数据质量表达：未知即 null，不猜日期/数值；质量警告与错误码是一等公民 | FR-3/FR-6 验收包含 |
 | NFR-8 | 性能：记录制目标（环境、样本量、字节、耗时、重试留档），不做无条件硬承诺；HTTP 查询不被下载任务阻塞 | I6 产出基线报告 |
 

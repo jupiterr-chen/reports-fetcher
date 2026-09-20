@@ -1,0 +1,28 @@
+# 版本库与本地环境
+.git/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# 运行产物（归档/日志/数据库不入镜像；probe 原始产物仅在宿主机保留，脱敏后才进 fixtures）
+reports/
+*.log
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+tools/probe/out/
+
+# 本地配置与密钥
+.env
+config.local.toml
+
+# IDE / OS
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store

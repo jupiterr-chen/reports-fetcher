@@ -1,0 +1,48 @@
+# reports-fetcher 容器编排（Docker 为主力执行方案）
+#
+# 常用命令：
+#   探测（I0）： SEC_UA_EMAIL=you@example.com docker compose run --rm probe
+#               docker compose run --rm probe python tools/probe/probe_sources.py --market us
+#   CLI（I1 起）：docker compose run --rm cli fetch AAPL --last 4
+#   服务（I5 起）：docker compose up -d serve
+
+services:
+  # I0 来源契约探测：源码整体挂载，产物写回宿主机 tools/probe/out/
+  # 国内网络默认：本地已有 python:3.12-slim 基镜像 + 清华 pip 源；
+  # 海外/其他环境用环境变量覆盖：BASE_IMAGE / PIP_INDEX_URL
+  probe:
+    build:
+      context: .
+      target: dev
+      args:
+        BASE_IMAGE: ${BASE_IMAGE:-python:3.12-slim}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+    profiles: ["tools"]
+    environment:
+      SEC_UA_EMAIL: ${SEC_UA_EMAIL:-}
+    volumes:
+      - .:/app
+    command: ["python", "tools/probe/probe_sources.py", "--market", "all"]
+
+  # I1 起启用：CLI 运行（归档目录/配置经挂载持久化到宿主机）
+  # cli:
+  #   build:
+  #     context: .
+  #     target: runtime
+  #   profiles: ["tools"]
+  #   volumes:
+  #     - ./reports:/app/reports
+  #     - ./config.toml:/app/config.toml:ro
+  #   entrypoint: ["python", "-m", "reports_fetcher"]
+
+  # I5 起启用：HTTP 服务（仅发布到宿主 127.0.0.1）
+  # serve:
+  #   build:
+  #     context: .
+  #     target: server
+  #   ports:
+  #     - "127.0.0.1:8000:8000"
+  #   volumes:
+  #     - ./reports:/app/reports
+  #     - ./config.toml:/app/config.toml:ro
+  #   restart: unless-stopped

@@ -65,7 +65,8 @@ flowchart TD
 
 | 项 | 建议 | 原因及代价 |
 |---|---|---|
-| Python | 3.11+ | 与 StrEnum、tomllib 保持一致 |
+| 运行交付 | Docker 容器（主力） | 开发/探测/CLI/服务统一在容器内执行；宿主机仅要求 Docker，不提供 venv 交付路径 |
+| Python | 3.11+（容器内） | 与 StrEnum、tomllib 保持一致 |
 | 来源 HTTP | requests；显式统一重试循环 | 三市场并发有限；确保每次重试进入共享限速器 |
 | 服务 API | FastAPI + Uvicorn | OpenAPI、校验和标准 HTTP 服务；不继续维持“全部只有 requests”的依赖假设 |
 | 索引 / 任务 | SQLite WAL | 单机低并发足够；每线程独立连接、短事务和 busy_timeout |
@@ -73,7 +74,7 @@ flowchart TD
 | 并发 | 一个服务进程、一个任务执行器、每任务最多三个市场线程 | 减少重复工作并共享源站预算；任务查询不等待下载完成 |
 | 日志 | logging | request_id / job_id / report_id 可关联，敏感字段脱敏 |
 
-抓取核心直接依赖 requests；服务依赖作为 `server` 可选安装组（FastAPI/Pydantic/Uvicorn，以实现时锁定版本为准）；测试依赖独立。默认只监听 127.0.0.1，跨主机调用使用令牌和 HTTPS。
+抓取核心直接依赖 requests；服务依赖作为 `server` 可选安装组（FastAPI/Pydantic/Uvicorn，以实现时锁定版本为准）；测试依赖独立。Docker 是主力运行与交付方式：Dockerfile 提供 dev（探测/开发）、runtime（CLI）、server（HTTP）多阶段目标，docker-compose.yml 提供对应服务；归档目录、配置、日志与 fixture 经 bind mount / 环境变量注入容器。容器内进程监听 0.0.0.0，端口默认仅发布到宿主机 127.0.0.1，跨主机调用使用令牌和 HTTPS。
 
 同一归档根目录仅允许一个写入所有者。服务运行时，独立 CLI 写入应明确报 `store_in_use`，应用改用 HTTP；服务停止时 CLI 可独立运行。使用操作系统进程锁，不靠遗留锁文件是否存在判断。P0 不通过增加 Uvicorn workers 提升吞吐；这会复制队列执行器和限速预算。
 
@@ -93,6 +94,8 @@ reports_fetcher/
   downloader.py          # 共享传输层，流式下载到临时文件
   store.py               # 唯一文件提交、索引、恢复
   adapters/              # cn_cninfo.py / hk_hkexnews.py / us_edgar.py
+  Dockerfile / docker-compose.yml / .dockerignore   # 容器化交付（主力，见 §3）
+  tools/probe/           # I0 来源契约探测脚本（dev 镜像内运行，不进生产镜像）
 ```
 
 外部契约以 [HTTP_API.md](./HTTP_API.md) 为准，服务层不调用 CLI 子进程。后续分析暂不建空模块、向量库或模型调用框架。

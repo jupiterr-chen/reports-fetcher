@@ -1,0 +1,5 @@
+{
+  "status": 404,
+  "content_type": "application/xml",
+  "body_head": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message><Key>submissions/CIK0009999999.json</Key><RequestId>CG6DPH4A8257WFHG</RequestId>"
+}

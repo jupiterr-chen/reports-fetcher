@@ -1,0 +1,28 @@
+{
+  "sh_600519": [
+    {
+      "code": "600519",
+      "pinyin": "gzmt",
+      "sjstsBond": "false",
+      "category": "A股",
+      "type": "shj",
+      "delisted": "false",
+      "orgId": "gssh0600519",
+      "zwjc": "贵州茅台"
+    }
+  ],
+  "sz_000001": [
+    {
+      "code": "000001",
+      "pinyin": "payh",
+      "sjstsBond": "false",
+      "category": "A股",
+      "type": "shj",
+      "delisted": "false",
+      "orgId": "gssz0000001",
+      "zwjc": "平安银行"
+    }
+  ],
+  "orgId_600519": "gssh0600519",
+  "orgId_000001": "gssz0000001"
+}

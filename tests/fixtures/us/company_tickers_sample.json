@@ -1,0 +1,40 @@
+{
+  "total": 10438,
+  "hits": [
+    {
+      "cik_str": 320193,
+      "ticker": "AAPL",
+      "title": "Apple Inc."
+    },
+    {
+      "cik_str": 1652044,
+      "ticker": "GOOGL",
+      "title": "Alphabet Inc."
+    },
+    {
+      "cik_str": 1067983,
+      "ticker": "BRK-B",
+      "title": "BERKSHIRE HATHAWAY INC"
+    },
+    {
+      "cik_str": 1577552,
+      "ticker": "BABA",
+      "title": "Alibaba Group Holding Ltd"
+    },
+    {
+      "cik_str": 14693,
+      "ticker": "BF-B",
+      "title": "BROWN FORMAN CORP"
+    },
+    {
+      "cik_str": 1652044,
+      "ticker": "GOOG",
+      "title": "Alphabet Inc."
+    },
+    {
+      "cik_str": 1067983,
+      "ticker": "BRK-A",
+      "title": "BERKSHIRE HATHAWAY INC"
+    }
+  ]
+}

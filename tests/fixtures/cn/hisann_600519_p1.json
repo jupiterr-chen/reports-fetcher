@@ -1,0 +1,96 @@
+{
+  "total": 21,
+  "hasMore": false,
+  "page_count": 21,
+  "fields_of_first": [
+    "adjunctSize",
+    "adjunctType",
+    "adjunctUrl",
+    "announcementContent",
+    "announcementId",
+    "announcementTime",
+    "announcementTitle",
+    "announcementType",
+    "announcementTypeName",
+    "associateAnnouncement",
+    "batchNum",
+    "columnId",
+    "id",
+    "important",
+    "orgId",
+    "orgName",
+    "pageColumn",
+    "secCode",
+    "secName",
+    "secNameList",
+    "shortTitle",
+    "storageTime",
+    "tileSecName"
+  ],
+  "rows_head": [
+    {
+      "secCode": "600519",
+      "secName": "贵州茅台",
+      "announcementTitle": "贵州茅台2026年半年度报告",
+      "announcementTime": 1786723200000,
+      "adjunctUrl": "finalpage/2026-08-15/1225475868.PDF",
+      "announcementTypeName": null
+    },
+    {
+      "secCode": "600519",
+      "secName": "贵州茅台",
+      "announcementTitle": "贵州茅台2026年半年度报告摘要",
+      "announcementTime": 1786723200000,
+      "adjunctUrl": "finalpage/2026-08-15/1225475860.PDF",
+      "announcementTypeName": null
+    },
+    {
+      "secCode": "600519",
+      "secName": "贵州茅台",
+      "announcementTitle": "贵州茅台2026年第一季度报告",
+      "announcementTime": 1777046400000,
+      "adjunctUrl": "finalpage/2026-04-25/1225187851.PDF",
+      "announcementTypeName": null
+    },
+    {
+      "secCode": "600519",
+      "secName": "贵州茅台",
+      "announcementTitle": "贵州茅台2025年年度报告",
+      "announcementTime": 1776355200000,
+      "adjunctUrl": "finalpage/2026-04-17/1225114741.PDF",
+      "announcementTypeName": null
+    },
+    {
+      "secCode": "600519",
+      "secName": "贵州茅台",
+      "announcementTitle": "贵州茅台2025年年度报告（英文版）",
+      "announcementTime": 1776355200000,
+      "adjunctUrl": "finalpage/2026-04-17/1225114733.PDF",
+      "announcementTypeName": null
+    },
+    {
+      "secCode": "600519",
+      "secName": "贵州茅台",
+      "announcementTitle": "贵州茅台2025年年度报告摘要",
+      "announcementTime": 1776355200000,
+      "adjunctUrl": "finalpage/2026-04-17/1225114731.PDF",
+      "announcementTypeName": null
+    },
+    {
+      "secCode": "600519",
+      "secName": "贵州茅台",
+      "announcementTitle": "贵州茅台2025年第三季度报告",
+      "announcementTime": 1761753600000,
+      "adjunctUrl": "finalpage/2025-10-30/1224764517.PDF",
+      "announcementTypeName": null
+    },
+    {
+      "secCode": "600519",
+      "secName": "贵州茅台",
+      "announcementTitle": "贵州茅台2025年半年度报告",
+      "announcementTime": 1755014400000,
+      "adjunctUrl": "finalpage/2025-08-13/1224462930.PDF",
+      "announcementTypeName": null
+    }
+  ]
+}

@@ -1,0 +1,137 @@
+{
+  "name": "Apple Inc.",
+  "cik": "0000320193",
+  "tickers": [
+    "AAPL"
+  ],
+  "recent_keys": [
+    "accessionNumber",
+    "filingDate",
+    "reportDate",
+    "acceptanceDateTime",
+    "act",
+    "form",
+    "fileNumber",
+    "filmNumber",
+    "items",
+    "core_type",
+    "size",
+    "isXBRL",
+    "isInlineXBRL",
+    "isXBRLNumeric",
+    "primaryDocument",
+    "primaryDocDescription"
+  ],
+  "recent_row_count": 1001,
+  "form_distribution_top": {
+    "4": 591,
+    "8-K": 103,
+    "424B2": 46,
+    "144": 45,
+    "10-Q": 33,
+    "PX14A6G": 27,
+    "FWP": 23,
+    "SC 13G/A": 22,
+    "3": 12,
+    "DEFA14A": 12,
+    "SD": 11,
+    "DEF 14A": 11,
+    "10-K": 11,
+    "NO ACT": 7,
+    "8-A12B": 5
+  },
+  "periodic_rows_head": [
+    {
+      "form": "10-Q",
+      "filingDate": "2026-07-31",
+      "reportDate": "2026-06-27",
+      "accessionNumber": "0000320193-26-000020",
+      "primaryDocument": "aapl-20260627.htm"
+    },
+    {
+      "form": "10-Q",
+      "filingDate": "2026-05-01",
+      "reportDate": "2026-03-28",
+      "accessionNumber": "0000320193-26-000013",
+      "primaryDocument": "aapl-20260328.htm"
+    },
+    {
+      "form": "10-Q",
+      "filingDate": "2026-01-30",
+      "reportDate": "2025-12-27",
+      "accessionNumber": "0000320193-26-000006",
+      "primaryDocument": "aapl-20251227.htm"
+    },
+    {
+      "form": "10-K",
+      "filingDate": "2025-10-31",
+      "reportDate": "2025-09-27",
+      "accessionNumber": "0000320193-25-000079",
+      "primaryDocument": "aapl-20250927.htm"
+    },
+    {
+      "form": "10-Q",
+      "filingDate": "2025-08-01",
+      "reportDate": "2025-06-28",
+      "accessionNumber": "0000320193-25-000073",
+      "primaryDocument": "aapl-20250628.htm"
+    },
+    {
+      "form": "10-Q",
+      "filingDate": "2025-05-02",
+      "reportDate": "2025-03-29",
+      "accessionNumber": "0000320193-25-000057",
+      "primaryDocument": "aapl-20250329.htm"
+    },
+    {
+      "form": "10-Q",
+      "filingDate": "2025-01-31",
+      "reportDate": "2024-12-28",
+      "accessionNumber": "0000320193-25-000008",
+      "primaryDocument": "aapl-20241228.htm"
+    },
+    {
+      "form": "10-K",
+      "filingDate": "2024-11-01",
+      "reportDate": "2024-09-28",
+      "accessionNumber": "0000320193-24-000123",
+      "primaryDocument": "aapl-20240928.htm"
+    },
+    {
+      "form": "10-Q",
+      "filingDate": "2024-08-02",
+      "reportDate": "2024-06-29",
+      "accessionNumber": "0000320193-24-000081",
+      "primaryDocument": "aapl-20240629.htm"
+    },
+    {
+      "form": "10-Q",
+      "filingDate": "2024-05-03",
+      "reportDate": "2024-03-30",
+      "accessionNumber": "0000320193-24-000069",
+      "primaryDocument": "aapl-20240330.htm"
+    },
+    {
+      "form": "10-Q",
+      "filingDate": "2024-02-02",
+      "reportDate": "2023-12-30",
+      "accessionNumber": "0000320193-24-000006",
+      "primaryDocument": "aapl-20231230.htm"
+    },
+    {
+      "form": "10-K",
+      "filingDate": "2023-11-03",
+      "reportDate": "2023-09-30",
+      "accessionNumber": "0000320193-23-000106",
+      "primaryDocument": "aapl-20230930.htm"
+    }
+  ],
+  "filings_files": [
+    {
+      "name": "CIK0000320193-submissions-001.json",
+      "filingCount": 1247,
+      "filingFrom": "1994-01-26",
+      "filingTo": "2015-07-22"
+    }
+  ]
+}

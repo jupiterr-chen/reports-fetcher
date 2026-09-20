@@ -36,12 +36,16 @@ I0 → I1 → ┬─ I2 ─┬→ I4 → I5 → I6
 
 I2 与 I3 相互独立、均只依赖 I1，可按顺序做也可并行做（单人开发建议 I2 → I3，CN 契约相对更稳）。
 
+人日估算（I0 完成后复核，2026-09-20）：I1≈2、I2≈1、I3≈1.5（HK 契约改为 HTML 解析后上调）、I4≈1.5、I5≈2、I6≈1，剩余合计约 9 人日；依据与假设见 [docs/SOURCE_VERIFICATION.md](docs/SOURCE_VERIFICATION.md) §3。
+
 ## 3. 迭代详情
 
 ### I0 来源契约验证与 fixture 冻结
 
+> **状态：✅ 已完成（2026-09-20）**。结论与 DoD 核对见 [docs/SOURCE_VERIFICATION.md](docs/SOURCE_VERIFICATION.md)，样本见 `tests/fixtures/`，DESIGN 已回填至 v1.3。要点：HK 披露易契约已迁移（旧 JSON 端点 404 → titlesearch.xhtml 深链 HTML），I3 估算上调至 1.5 人日，剩余迭代合计约 9 人日。
+
 - **目标**：把三市场全部"待实测/候选契约"变为可复核事实，冻结选择规则测试用例。
-- **范围内**：一次性探测脚本（`tools/probe/`，不进生产包）；录制正常/异常响应 fixture；回填 DESIGN §6/§7/§8 与附录；确认 CN 翻页终止条件、HK recordCnt/分页或窗口切分方式、SEC filings.files 历史形态；实测限速初值与所需请求头/Cookie；复核 I1–I6 规模并给出人日估算表。
+- **范围内**：Docker 基座（Dockerfile dev 目标 + compose probe 服务 + .dockerignore），全部探测在容器内执行（主力技术方案，宿主机不装 venv）；一次性探测脚本（`tools/probe/`，不进生产包）；录制正常/异常响应 fixture；回填 DESIGN §6/§7/§8 与附录；确认 CN 翻页终止条件、HK recordCnt/分页或窗口切分方式、SEC filings.files 历史形态；实测限速初值与所需请求头/Cookie；复核 I1–I6 规模并给出人日估算表。
 - **范围外**：任何生产代码；6-K/北交所探测（记入 backlog）。
 - **交付物**：`tests/fixtures/`（真实样本+脱敏说明）、DESIGN 契约回填、《来源契约验证简报》（含限速实测值与后续估时）。
 - **DoD**：
@@ -49,13 +53,15 @@ I2 与 I3 相互独立、均只依赖 I1，可按顺序做也可并行做（单�
   2. 分页/扩窗方式确认并写入 DESIGN；
   3. DESIGN 中所有"待实测/候选"标记闭合（闭合或明确为阻断项）；
   4. CN/HK 请求头与 Cookie 要求、SEC UA 配置项有实测记录；
-  5. I1–I6 人日估算表产出。
+  5. I1–I6 人日估算表产出；
+  6. Docker 基座可用：`docker compose run --rm probe …` 在容器内完成全部探测。
 - **主要风险**：披露易/巨潮风控拦截 → 预案：记录 UA/Cookie/频率要求并调整限速初值；仍不可用则该市场标记阻断，不阻塞其余市场。
 
 ### I1 核心链路垂直切片（US 先行）
 
 - **目标**：用契约最干净的美股打通"识别 → 发现 → 选择 → 下载 → 归档 → CLI"全链路，验证架构骨架。
 - **范围内**：
+  - Dockerfile 增加 runtime 目标与 compose cli 服务（归档目录 bind mount、配置经挂载/环境变量注入）；
   - `models.py / symbol.py / period.py` 基础（统一模型、市场识别、日期工具）；
   - `downloader.py` 传输层：来源组限速、显式重试循环（每次重试过限速器）、流式下载+字节上限+SHA-256、PDF/HTML 联合校验、重定向域名检查；
   - `store.py` 最小闭环：schema v1（schema_meta/manifest/artifacts/symbol_map，archive_intents 表一并建好）、upsert 取 report_id、临时文件原子提交、缓存命中（sha256 复核）；
@@ -65,12 +71,12 @@ I2 与 I3 相互独立、均只依赖 I1，可按顺序做也可并行做（单�
   - 单测：symbol / selection / period / store / transport / us_edgar（fixture 驱动，不触网）。
 - **范围外**：CN/HK 适配器；archive_intents 完整恢复协议（I4）；refresh 内容版本策略（I1 仅跳过已有，不做 refresh 参数）；jobs/HTTP（I5）。
 - **DoD**：
-  1. `python -m reports_fetcher fetch AAPL --last 4` 端到端成功，磁盘文件 / manifest / checksum 三方一致；
+  1. `docker compose run --rm cli fetch AAPL --last 4` 端到端成功（容器内执行 `python -m reports_fetcher`），宿主机归档目录 / manifest / checksum 三方一致；
   2. 立即重跑全部 `cached`，无重复记录；
   3. 强杀进程后重跑：无半文件、无脏 done（基础原子性：.part → 校验 → 原子改名 → 标记）；
   4. SEC User-Agent 未配置时 US 明确报错（NFR-5）；
   5. 上述单测模块全绿。
-- **演示**：`fetch AAPL MSFT --last 4` → 展示 `reports/US/` 目录与 manifest。
+- **演示**：`docker compose run --rm cli fetch AAPL MSFT --last 4` → 展示宿主机 `reports/US/` 目录与 manifest。
 
 ### I2 CN 适配器（巨潮）
 
@@ -80,7 +86,7 @@ I2 与 I3 相互独立、均只依赖 I1，可按顺序做也可并行做（单�
   2. `fetch 600519` 可用，未知报告期条目保留 null + 警告；
   3. 分页预算与 `truncated` 上报生效（fake 分页 fixture 驱动）；
   4. 公告时间按 Asia/Shanghai 语义落库，原值保留。
-- **演示**：`fetch 600519 000001 --last 4`。
+- **演示**：`docker compose run --rm cli fetch 600519 000001 --last 4`。
 
 ### I3 HK 适配器（披露易）
 
@@ -90,7 +96,7 @@ I2 与 I3 相互独立、均只依赖 I1，可按顺序做也可并行做（单�
   2. "二零二四年年報"类无明确期末日样本 → `report_period=null` + `period_source=unknown` + 警告，不猜 12-31；
   3. QTR-HK：fixture 验证结论明确（启用为显式可选类型，或维持不支持并记录原因）；
   4. 三市场 CLI 冒烟全通（每市场 ≥3 只）。
-- **演示**：`fetch 0700.HK 0005.HK --last 4`。
+- **演示**：`docker compose run --rm cli fetch 0700.HK 0005.HK --last 4`。
 - **备注**：I3 结束 = 原始需求（三市场 CLI 归档）达成，可提前实际使用；后续迭代属于一期补全。
 
 ### I4 可靠性硬化
@@ -105,7 +111,7 @@ I2 与 I3 相互独立、均只依赖 I1，可按顺序做也可并行做（单�
 
 ### I5 HTTP 服务与持久化任务
 
-- **范围内**：`api.py / api_models.py / jobs.py`；FastAPI 路由、鉴权（回环 local / 令牌）、Problem Details、OpenAPI；JobService（幂等键 + request_hash、落库后 202、单执行器、队列上限、deadline/attempt、重启恢复 running→queued）；档案查询与按 ID 下载（路径边界、ETag/304、nosniff）；`serve` 命令；jobs 系列表经 schema_version 升级引入。
+- **范围内**：`api.py / api_models.py / jobs.py`；FastAPI 路由、鉴权（回环 local / 令牌）、Problem Details、OpenAPI；JobService（幂等键 + request_hash、落库后 202、单执行器、队列上限、deadline/attempt、重启恢复 running→queued）；档案查询与按 ID 下载（路径边界、ETag/304、nosniff）；`serve` 命令；jobs 系列表经 schema_version 升级引入；Dockerfile server 目标与 compose serve 服务（端口仅发布到宿主 127.0.0.1）。
 - **DoD**：
   1. [HTTP_API.md](HTTP_API.md) §8 全部验收场景通过；
   2. CLI 与 HTTP 对同一请求选出相同报告（一致性用例）；

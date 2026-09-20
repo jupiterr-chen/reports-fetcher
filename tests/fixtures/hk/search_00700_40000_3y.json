@@ -1,0 +1,109 @@
+{
+  "params": {
+    "lang": "ZH",
+    "category": "0",
+    "market": "SEHK",
+    "searchType": "1",
+    "documentType": "-1",
+    "t1code": "40000",
+    "t2Gcode": "-2",
+    "t2code": "-2",
+    "stockId": "7609",
+    "title": "",
+    "from": "20230920",
+    "to": "20260920"
+  },
+  "record_count": "9",
+  "rows": [
+    {
+      "release_datetime": "發放時間: 25/08/2026 16:53",
+      "stock_code": "股份代號: 00700 80700",
+      "stock_name": "股份簡稱: 騰訊控股 騰訊控股－Ｒ",
+      "headline": "財務報表&#x2f;環境、社會及管治資料 - [中期&#x2f;半年度報告]",
+      "subcategory": "中期&#x2f;半年度報告",
+      "title": "中期報告 2026",
+      "file_link": "/listedco/listconews/sehk/2026/0825/2026082500557_c.pdf",
+      "file_size": "5MB"
+    },
+    {
+      "release_datetime": "發放時間: 09/04/2026 17:26",
+      "stock_code": "股份代號: 00700 80700",
+      "stock_name": "股份簡稱: 騰訊控股 騰訊控股－Ｒ",
+      "headline": "財務報表&#x2f;環境、社會及管治資料 - [環境、社會及管治資料&#x2f;報告]",
+      "subcategory": "環境、社會及管治資料&#x2f;報告",
+      "title": "2025年環境、社會及管治報告",
+      "file_link": "/listedco/listconews/sehk/2026/0409/2026040901286_c.pdf",
+      "file_size": "18MB"
+    },
+    {
+      "release_datetime": "發放時間: 09/04/2026 17:21",
+      "stock_code": "股份代號: 00700 80700",
+      "stock_name": "股份簡稱: 騰訊控股 騰訊控股－Ｒ",
+      "headline": "財務報表&#x2f;環境、社會及管治資料 - [年報]",
+      "subcategory": "年報",
+      "title": "2025 年報",
+      "file_link": "/listedco/listconews/sehk/2026/0409/2026040901232_c.pdf",
+      "file_size": "4MB"
+    },
+    {
+      "release_datetime": "發放時間: 26/08/2025 17:00",
+      "stock_code": "股份代號: 00700 80700",
+      "stock_name": "股份簡稱: 騰訊控股 騰訊控股－Ｒ",
+      "headline": "財務報表&#x2f;環境、社會及管治資料 - [中期&#x2f;半年度報告]",
+      "subcategory": "中期&#x2f;半年度報告",
+      "title": "中期報告 2025",
+      "file_link": "/listedco/listconews/sehk/2025/0826/2025082600677_c.pdf",
+      "file_size": "12MB"
+    },
+    {
+      "release_datetime": "發放時間: 08/04/2025 17:04",
+      "stock_code": "股份代號: 00700 80700",
+      "stock_name": "股份簡稱: 騰訊控股 騰訊控股－Ｒ",
+      "headline": "財務報表&#x2f;環境、社會及管治資料 - [環境、社會及管治資料&#x2f;報告]",
+      "subcategory": "環境、社會及管治資料&#x2f;報告",
+      "title": "2024年環境、社會及管治報告",
+      "file_link": "/listedco/listconews/sehk/2025/0408/2025040800680_c.pdf",
+      "file_size": "9MB"
+    },
+    {
+      "release_datetime": "發放時間: 08/04/2025 17:02",
+      "stock_code": "股份代號: 00700 80700",
+      "stock_name": "股份簡稱: 騰訊控股 騰訊控股－Ｒ",
+      "headline": "財務報表&#x2f;環境、社會及管治資料 - [年報]",
+      "subcategory": "年報",
+      "title": "2024 年報",
+      "file_link": "/listedco/listconews/sehk/2025/0408/2025040800668_c.pdf",
+      "file_size": "5MB"
+    },
+    {
+      "release_datetime": "發放時間: 27/08/2024 19:25",
+      "stock_code": "股份代號: 00700 80700",
+      "stock_name": "股份簡稱: 騰訊控股 騰訊控股－Ｒ",
+      "headline": "財務報表&#x2f;環境、社會及管治資料 - [中期&#x2f;半年度報告]",
+      "subcategory": "中期&#x2f;半年度報告",
+      "title": "中期報告 2024",
+      "file_link": "/listedco/listconews/sehk/2024/0827/2024082701155_c.pdf",
+      "file_size": "3MB"
+    },
+    {
+      "release_datetime": "發放時間: 08/04/2024 19:43",
+      "stock_code": "股份代號: 00700 80700",
+      "stock_name": "股份簡稱: 騰訊控股 騰訊控股－Ｒ",
+      "headline": "財務報表&#x2f;環境、社會及管治資料 - [環境、社會及管治資料&#x2f;報告]",
+      "subcategory": "環境、社會及管治資料&#x2f;報告",
+      "title": "2023年環境、社會及管治報告",
+      "file_link": "/listedco/listconews/sehk/2024/0408/2024040801839_c.pdf",
+      "file_size": "9MB"
+    },
+    {
+      "release_datetime": "發放時間: 08/04/2024 19:35",
+      "stock_code": "股份代號: 00700 80700",
+      "stock_name": "股份簡稱: 騰訊控股 騰訊控股－Ｒ",
+      "headline": "財務報表&#x2f;環境、社會及管治資料 - [年報]",
+      "subcategory": "年報",
+      "title": "2023 年報",
+      "file_link": "/listedco/listconews/sehk/2024/0408/2024040801823_c.pdf",
+      "file_size": "6MB"
+    }
+  ]
+}
