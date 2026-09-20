@@ -1,18 +1,19 @@
-"""适配器注册表：市场 → 适配器。I1 仅 US；CN/HK 分别在 I2/I3 落地。"""
+"""适配器注册表：市场 → 适配器。I2 起 CN 可用；HK 在 I3 落地。"""
 from __future__ import annotations
 
 from reports_fetcher.config import Config
 from reports_fetcher.downloader import Transport
 from reports_fetcher.models import Market, UnsupportedMarketError
 from reports_fetcher.adapters.base import BaseMarketAdapter
+from reports_fetcher.adapters.cn_cninfo import CNCninfoAdapter
 from reports_fetcher.adapters.us_edgar import USEdgarAdapter
 
 _ADAPTER_FACTORIES = {
     Market.US: USEdgarAdapter,
+    Market.CN: CNCninfoAdapter,
 }
 
 _PLANNED_ITERATIONS = {
-    Market.CN: "I2",
     Market.HK: "I3",
 }
 

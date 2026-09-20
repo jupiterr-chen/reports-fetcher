@@ -87,6 +87,12 @@ def select_reports(candidates: list[Report], query: ReportQuery,
                     f"报告组 {key[2]}/{key[3]} 仅有摘要或修订通知，"
                     f"未获得全文（跳过: {[r.source_id for r in non_full]}）")
             continue
+        # 仅有修订通知时仍可选择原全文，但必须警告未合并修订（DESIGN §5）
+        unmerged = [r for r in members if r.document_role is DocumentRole.NOTICE]
+        if unmerged:
+            result.warnings.append(
+                f"报告组 {key[2]}/{key[3]} 存在更正/修订通知未合并"
+                f"（{[r.source_id for r in unmerged]}），分析时注意版本时效")
         # 4) 语言选择：优先偏好语言；不因语言丢弃唯一全文（回退 + 警告）
         chosen = _select_language(full_versions, language_preference, key, result)
         # 5) 组内版本选择：最新可确认完整版本（公告时间倒序）

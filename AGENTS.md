@@ -2,11 +2,12 @@
 
 一句话：输入 A股/港股/美股代码 → 获取最新 N 份定期财报原文 → 按 市场/代码/财报日期 归档 + SQLite 索引；CLI + HTTP 双入口，Docker 为主力运行方式。
 
-## 当前状态（2026-09-20）
+## 当前状态（2026-09-21）
 
 - I0 已完成（提交 `d3575b3`）：三市场来源契约实测验证、19 个 fixture 入库、DESIGN 回填至 v1.3。
-- **I1 已完成（v0.1.0）**：US 核心链路垂直切片——`docker compose run --rm cli fetch AAPL --last 4` 端到端可用（models/symbol/period/downloader/store/selection/us_edgar/core/cli + 158 个单测，DoD 全项通过）。
-- **下一步：I2（CN 适配器·巨潮）**。迭代范围、DoD、验收标准以 [ITERATION_PLAN.md](ITERATION_PLAN.md) 为准，不要自行扩大范围。
+- I1 已完成（提交 `16659f7`，v0.1.0）：US 核心链路垂直切片，`fetch AAPL --last 4` 端到端可用。
+- **I2 已完成（v0.2.0）**：CN 巨潮适配器（标题双变体解析、document_role、中文优先语言回退、分页+有界扩窗），`fetch 600519 000001 300750 --last 4` 端到端可用（196 个单测，DoD 全项通过）。
+- **下一步：I3（HK 适配器·披露易，HTML 深链契约）**。迭代范围、DoD、验收标准以 [ITERATION_PLAN.md](ITERATION_PLAN.md) 为准，不要自行扩大范围。I3 结束即达成"三市场 CLI 归档"的原始需求。
 
 ## 文档地图（动手前先读）
 

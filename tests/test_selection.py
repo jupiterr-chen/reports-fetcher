@@ -67,7 +67,7 @@ class TestVersionSelection:
         assert result.selected_count == 0
         assert any("未获得全文" in w for w in result.warnings)
 
-    def test_notice_alongside_full_keeps_full_with_warning_context(self):
+    def test_notice_alongside_full_keeps_full_with_warning(self):
         full = make_report(report_period="2025-09-27", source_id="f/full.htm",
                            filing_date="2025-10-31")
         notice = make_report(report_period="2025-09-27",
@@ -76,6 +76,8 @@ class TestVersionSelection:
         result = select_reports([full, notice], _query())
         assert result.selected_count == 1
         assert result.selected[0].source_id == "f/full.htm"
+        # 仅有修订通知时仍可选择原全文，但必须警告未合并修订（DESIGN §5）
+        assert any("未合并" in w for w in result.warnings)
 
     def test_summary_never_selected_over_full(self):
         summary = make_report(report_period="2026-06-27",
