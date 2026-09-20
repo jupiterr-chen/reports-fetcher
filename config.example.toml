@@ -1,0 +1,38 @@
+# reports-fetcher 配置示例（复制为 config.toml 后按需修改）
+#
+# 优先级：CLI 显式参数 > 环境变量（SEC_UA_EMAIL）> 配置文件 > 默认值。
+# 容器运行时本文件挂载为 /app/config.toml（见 docker-compose.yml）。
+
+[general]
+out_dir = "./reports"          # 归档根目录（容器内路径，经 bind mount 持久化到宿主机）
+layout = "flat"                # flat | nested
+
+[http]
+# US（SEC）合规要求：使用真实联系邮箱。留空时若设置了环境变量 SEC_UA_EMAIL
+# 会自动生成 "reports-fetcher/<版本> <邮箱>"；两者都没有则 US 功能明确报错。
+user_agent = ""
+max_file_bytes = 209715200     # 200 MiB，流式读取时强制执行
+connect_timeout_seconds = 10
+read_timeout_seconds = 120
+file_deadline_seconds = 600
+max_retries = 3                # 首次 + 3 次重试 = 最多 4 次尝试
+
+[http.source_intervals]        # 来源组最小间隔（秒）：查询与文件域名合并预算
+sec = 0.13
+cninfo = 0.5
+hkex = 0.3
+
+[fetch]
+last_n = 4                     # 逻辑报告组数，1-20
+market_workers = 3             # 1-3；不提升同源限速预算
+max_lookback_years = 10
+max_discovery_requests_per_symbol = 100
+
+[fetch.default_forms]
+CN = ["Q1", "H1", "Q3", "FY"]
+HK = ["ANNUAL", "INTERIM"]
+US = ["10-Q", "10-K", "20-F"]
+
+[log]
+level = "INFO"
+file = ""                      # 留空仅输出到控制台

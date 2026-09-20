@@ -3,8 +3,12 @@
 # 常用命令：
 #   探测（I0）： SEC_UA_EMAIL=you@example.com docker compose run --rm probe
 #               docker compose run --rm probe python tools/probe/probe_sources.py --market us
-#   CLI（I1 起）：docker compose run --rm cli fetch AAPL --last 4
-#   服务（I5 起）：docker compose up -d serve
+#   测试（I1）： docker compose run --rm test
+#   CLI（I1）：  docker compose run --rm cli fetch AAPL --last 4
+#               SEC_UA_EMAIL=you@example.com docker compose run --rm cli fetch AAPL MSFT --last 4
+#   服务（I5）： docker compose up -d serve
+#
+# CLI 首次使用：cp config.example.toml config.toml（或仅依赖 SEC_UA_EMAIL 环境变量）。
 
 services:
   # I0 来源契约探测：源码整体挂载，产物写回宿主机 tools/probe/out/
@@ -24,16 +28,34 @@ services:
       - .:/app
     command: ["python", "tools/probe/probe_sources.py", "--market", "all"]
 
-  # I1 起启用：CLI 运行（归档目录/配置经挂载持久化到宿主机）
-  # cli:
-  #   build:
-  #     context: .
-  #     target: runtime
-  #   profiles: ["tools"]
-  #   volumes:
-  #     - ./reports:/app/reports
-  #     - ./config.toml:/app/config.toml:ro
-  #   entrypoint: ["python", "-m", "reports_fetcher"]
+  # 单元测试：pytest 安装组独立（NFR-6）；源码挂载为工作树，测试不触网
+  test:
+    build:
+      context: .
+      target: test
+      args:
+        BASE_IMAGE: ${BASE_IMAGE:-python:3.12-slim}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+    profiles: ["tools"]
+    volumes:
+      - .:/app
+    command: ["python", "-m", "pytest", "tests", "-q"]
+
+  # CLI 运行（I1 起）：归档目录/配置经挂载持久化到宿主机；敏感项经环境变量注入
+  cli:
+    build:
+      context: .
+      target: runtime
+      args:
+        BASE_IMAGE: ${BASE_IMAGE:-python:3.12-slim}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+    profiles: ["tools"]
+    environment:
+      SEC_UA_EMAIL: ${SEC_UA_EMAIL:-}
+    volumes:
+      - ./reports:/app/reports
+      - ./config.toml:/app/config.toml:ro
+    entrypoint: ["python", "-m", "reports_fetcher"]
 
   # I5 起启用：HTTP 服务（仅发布到宿主 127.0.0.1）
   # serve:

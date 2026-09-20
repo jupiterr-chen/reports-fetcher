@@ -4,8 +4,9 @@
 
 ## 当前状态（2026-09-20）
 
-- I0 已完成（提交 `d3575b3`）：三市场来源契约实测验证、19 个 fixture 入库、DESIGN 回填至 v1.3、估算已给出（剩余约 9 人日）。
-- **下一步：I1（核心链路垂直切片，US 先行）**。迭代范围、DoD、验收标准以 [ITERATION_PLAN.md](ITERATION_PLAN.md) 为准，不要自行扩大范围。
+- I0 已完成（提交 `d3575b3`）：三市场来源契约实测验证、19 个 fixture 入库、DESIGN 回填至 v1.3。
+- **I1 已完成（v0.1.0）**：US 核心链路垂直切片——`docker compose run --rm cli fetch AAPL --last 4` 端到端可用（models/symbol/period/downloader/store/selection/us_edgar/core/cli + 158 个单测，DoD 全项通过）。
+- **下一步：I2（CN 适配器·巨潮）**。迭代范围、DoD、验收标准以 [ITERATION_PLAN.md](ITERATION_PLAN.md) 为准，不要自行扩大范围。
 
 ## 文档地图（动手前先读）
 
@@ -22,7 +23,8 @@
 
 1. **Docker 主力**：一切执行（探测/CLI/测试/服务）都在容器内，宿主机不装 venv。常用：
    - 探测：`SEC_UA_EMAIL=<邮箱> docker compose run --rm probe`
-   - CLI（I1 起）：`docker compose run --rm cli fetch AAPL --last 4`
+   - 单测：`docker compose run --rm test`
+   - CLI：`SEC_UA_EMAIL=<邮箱> docker compose run --rm cli fetch AAPL --last 4`（config.toml 由 config.example.toml 复制生成，已 gitignore）
    - 国内网络：`BASE_IMAGE`/`PIP_INDEX_URL` 可覆盖（默认本地 `python:3.12-slim` + 清华源）
 2. **数据质量铁律**：未知即 null——报告期解析不出就 `period_source=unknown` + 警告，禁止用公告日/12-31/财季惯例猜造日期（HK 非日历年结公司是真实场景，见 fixture）。
 3. **Store 是唯一归档提交方**：下载器只产出已校验临时文件；先落盘原子改名、后标记 done。source_id 去重键：(market, symbol, source_id)。

@@ -15,9 +15,10 @@ venv/
 *.sqlite3-wal
 *.sqlite3-shm
 
-# 本地配置与密钥
+# 本地配置与密钥（config.toml 由 config.example.toml 复制，可能含个人联系邮箱）
 .env
 config.local.toml
+/config.toml
 
 # 探测产物中间文件（fixture 由脚本整理后放入 tests/fixtures/ 才提交）
 tools/probe/out/

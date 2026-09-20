@@ -1,8 +1,9 @@
 # reports-fetcher 容器化交付（主力运行方式，见 ARCHITECTURE §3）
 #
 # 目标：
-#   dev    : I0 来源契约探测与开发（当前阶段）
-#   runtime: CLI 运行（I1 起启用）
+#   dev    : I0 来源契约探测与开发（历史阶段，保留可复现）
+#   runtime: CLI 运行（I1 起启用，安装本包）
+#   test   : 单元测试（测试工具单列，NFR-6；源码经 bind mount，测试不触网）
 #   server : HTTP 服务（I5 起启用）
 #
 # 可覆盖构建参数（配合 docker-compose.yml）：
@@ -24,11 +25,20 @@ RUN pip install --index-url "$PIP_INDEX_URL" --no-cache-dir "requests>=2.31,<3"
 COPY . /app
 CMD ["python", "tools/probe/probe_sources.py", "--market", "all"]
 
-# ---- runtime：CLI（I1 起启用，届时安装本包） ----
-# FROM base AS runtime
-# COPY --from=build /app/dist/*.whl .
-# RUN pip install --no-cache-dir . && rm -f *.whl
-# ENTRYPOINT ["python", "-m", "reports_fetcher"]
+# ---- runtime：CLI（I1 起启用，安装本包） ----
+FROM base AS runtime
+ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+COPY pyproject.toml /app/pyproject.toml
+COPY reports_fetcher /app/reports_fetcher
+RUN pip install --index-url "$PIP_INDEX_URL" --no-cache-dir .
+ENTRYPOINT ["python", "-m", "reports_fetcher"]
+
+# ---- test：单元测试（pytest 独立安装组；源码经 compose 挂载为工作树） ----
+FROM runtime AS test
+RUN pip install --index-url "$PIP_INDEX_URL" --no-cache-dir ".[test]"
+WORKDIR /app
+ENTRYPOINT []
+CMD ["python", "-m", "pytest", "tests", "-q"]
 
 # ---- server：HTTP 服务（I5 起启用，server 安装组） ----
 # FROM runtime AS server

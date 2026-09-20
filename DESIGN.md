@@ -149,7 +149,7 @@ class BaseMarketAdapter:
 1. `https://www.sec.gov/files/company_tickers.json`（实测 10,438 条）构建 ticker→CIK 映射：**类股为连字符格式（BRK-A/BRK-B/BF-B）；GOOG 与 GOOGL 为不同 ticker、同一 CIK**——按 ticker 精确匹配即可，不做点号转换。CIK 保留补零形式作身份。
 2. `https://data.sec.gov/submissions/CIK{cik:010d}.json`：recent 并行数组（实测 AAPL 1001 行、17 键，含 isXBRL/primaryDocument 等）；zip 前必须校验数组等长。**不存在的 CIK 返回 404 + XML 错误体**（data.sec.gov 为对象存储支撑，fixture 留证），按 ResolveError 处理。
 3. `filings.files` 实测存在（`[{name, filingCount, filingFrom, filingTo}]`，Apple 历史段 1247 行、1994–2015）；历史 JSON **顶层即并行数组、无 filings/recent 包裹**；含 `primaryDocument` 字段但**老申报（1990 年代）为空串**——按需读历史时空 primaryDocument 以 `Archives/edgar/data/{cik}/{acc去连字符}/index.json` 兜底或跳过并警告。默认场景（最新 N 份）recent 必然覆盖，不触历史文件。
-4. 原文路径：`https://www.sec.gov/Archives/edgar/data/{cik}/{accession去连字符}/{primaryDocument}`；source_id=`accessionNumber/primaryDocument`。**reportDate 为权威期末，不可假设日历季度**（实测 Apple 财年 9 月止：10-K reportDate=2025-09-27）。
+4. 原文路径：`https://www.sec.gov/Archives/edgar/data/{cik}/{accession去连字符}/{primaryDocument}`；source_id=`accessionNumber/primaryDocument`。**reportDate 为权威期末，不可假设日历季度**（实测 Apple 财年 9 月止：10-K reportDate=2025-09-27）。**文件下载请求同样必须携带 UA**（I1 实测：无 UA 的 Archives 请求 403）；**现代主文档为 Inline XBRL，以 XML 声明 + 供应商注释（如 Workiva）开头、其后才是 `<html>`**（I1 实测 2026-09-20），内容类型嗅探须在开头窗口内探测而非仅看首标签。
 5. 默认支持基础类型 10-Q/10-K/20-F；修订申报（10-K/A、10-Q/A 实测存在于 recent）归入基础类型并保留 source_form/is_amendment，不能把 /A 直接覆盖全文。
 
 reportDate 非空且合法时作为期末；缺失则 null。filingDate 仍为来源提交日期，不转为服务器本地日期，也不替代 reportDate。10-K 不作为独立 Q4 指标数据使用。

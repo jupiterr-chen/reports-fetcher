@@ -59,6 +59,8 @@ I2 与 I3 相互独立、均只依赖 I1，可按顺序做也可并行做（单�
 
 ### I1 核心链路垂直切片（US 先行）
 
+> **状态：✅ 已完成（2026-09-20，v0.1.0）**。DoD 全项核对：① `docker compose run --rm cli fetch AAPL --last 4` 端到端成功（4/4 归档，Apple 10-K 期末 2025-09-27 印证 9 月财年语义；宿主机文件/manifest/checksum 三方一致，8 artifacts 0 不一致）；② 立即重跑全部 `cached`、目录无重复；③ 强杀容器于下载中途（2 个 .part 半文件 + 3 条 downloading 现场）后重跑：intents 收敛、半文件清扫、4/4 重新归档、无脏 done；④ UA 未配置 → `ua_not_configured` 明确报错退出码 2；⑤ 单测 158 个全绿（symbol/period/selection/store/transport/us_edgar，fixtures 驱动不触网）。实现期新知：SEC 现代主文档为 Inline XBRL（XML 声明 + Workiva 注释开头），内容嗅探已按窗口探测（已回填 DESIGN §8）；文件下载同样必须携带 UA。多市场参数框架就位（CN/HK 符号报 `unsupported_market` 并提示 I2/I3）。
+
 - **目标**：用契约最干净的美股打通"识别 → 发现 → 选择 → 下载 → 归档 → CLI"全链路，验证架构骨架。
 - **范围内**：
   - Dockerfile 增加 runtime 目标与 compose cli 服务（归档目录 bind mount、配置经挂载/环境变量注入）；
