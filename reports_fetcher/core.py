@@ -83,6 +83,17 @@ class FetchService:
                                                  self.config)
         return self._adapters[market]
 
+    def begin_discovery_session(self) -> None:
+        """开始新的发现会话（PHASE1_REVIEW T2）。
+
+        适配器内 的 resolve/list 元数据缓存（ticker 映射、submissions）
+        以"发现会话"为生命周期：会话内共享（同批不重复请求），会话间
+        重新获取。CLI 一次运行为一个会话；HTTP 每个任务开始时开启新会话，
+        因此常驻服务能看到新发布的申报，refresh 不被旧列表阻挡。
+        传输层与限速器保持共享，不因会话重建。
+        """
+        self._adapters = {}
+
     # ------------------------------------------------------------ fetch
 
     def fetch(self, raw_symbols: list[str], *, last_n: int | None = None,
@@ -226,6 +237,9 @@ class FetchService:
                 "truncated": discovery.truncated,
                 "searched_from": discovery.searched_from,
                 "searched_to": discovery.searched_to,
+                "insufficient_history": bool(selection.selected)
+                and selection.selected_count < query.last_n,
+                "notices": list(selection.notices),
             },
             warnings=warnings,
             error=None if items else "no_reports")
@@ -264,6 +278,9 @@ class FetchService:
         selection = select_reports(discovery.reports, query,
                                    language_preference=adapter.default_language_preference)
         warnings.extend(selection.warnings)
+        # PHASE1_REVIEW T6：区分"影响完整性的质量警告"（warnings）与
+        # "说明性信息"（notices：正常 last_n 截取、偏好语言正常选择）；
+        # 不足 N 份但取到文件 → insufficient_history 缺口。
         coverage = {
             "requested": query.last_n,
             "selected": selection.selected_count,
@@ -272,13 +289,18 @@ class FetchService:
             "truncated": discovery.truncated,
             "searched_from": discovery.searched_from,
             "searched_to": discovery.searched_to,
+            "insufficient_history": bool(selection.selected)
+            and selection.selected_count < query.last_n,
+            "notices": list(selection.notices),
         }
         empty = FetchResult(market=norm.market, symbol=norm.symbol,
                             status="empty", error="no_reports",
                             coverage=coverage, warnings=warnings,
+                            notices=selection.notices,
                             display_name=resolved.display_name)
         ok = FetchResult(market=norm.market, symbol=norm.symbol,
                          status="ok", coverage=coverage, warnings=warnings,
+                         notices=selection.notices,
                          display_name=resolved.display_name)
         return (ok if selection.selected else empty, selection)
 
@@ -356,7 +378,21 @@ class FetchService:
 
     @staticmethod
     def _finalize_status(result: FetchResult) -> None:
+        """按实际可用文件与质量缺口汇总状态（PHASE1_REVIEW T6）。
+
+        - 全部文件失败且有执行错误 → failed（无可用报告）；
+        - 至少一个可用文件 + 存在失败/质量警告/预算截断/历史不足 → partial；
+        - 正常满足 N（含正常截取与语言选择说明）→ ok。
+        说明性 notices 不参与降级。
+        """
         if result.status in ("empty", "failed") or not result.items:
             return
-        all_ok = all(i.outcome != OUTCOME_FAILED for i in result.items)
-        result.status = "ok" if all_ok and not result.warnings else "partial"
+        usable = [i for i in result.items if i.outcome != OUTCOME_FAILED]
+        if not usable:
+            result.status = "failed"   # 选了报告但一份文件都没拿到
+            return
+        gaps = any(i.outcome == OUTCOME_FAILED for i in result.items)
+        gaps = gaps or bool(result.warnings)
+        gaps = gaps or bool(result.coverage.get("truncated"))
+        gaps = gaps or bool(result.coverage.get("insufficient_history"))
+        result.status = "partial" if gaps else "ok"

@@ -242,7 +242,8 @@ class TestListReports:
             ("FY", "2025-12-31"), ("Q3", "2025-09-30")]
         fy = [r for r in selection.selected if r.doc_type == "FY"][0]
         assert fy.language == "zh"  # 中文全文优先，英文回退
-        assert any("多语言" in w for w in selection.warnings)
+        # 偏好语言可用时的正常选择是说明性信息（PHASE1_REVIEW T6）
+        assert any("多语言" in n for n in selection.notices)
         # 摘要绝不入选
         assert all(r.document_role is not DocumentRole.SUMMARY
                    for r in selection.selected)

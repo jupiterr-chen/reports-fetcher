@@ -394,3 +394,33 @@ class TestNonBlocking:
             assert elapsed < 1.0, f"查询被阻塞 {elapsed:.2f}s"
         finally:
             harness.jobs.stop(timeout=15)
+
+
+class TestDocsProtection:
+    """PHASE1_REVIEW T7：令牌模式下 docs/OpenAPI/redoc 受保护。"""
+
+    def test_token_mode_docs_protected(self, tmp_path):
+        harness = Harness(tmp_path, tokens={"s3cret": "app-a"})
+        try:
+            # 无凭据：文档与 schema 均拒绝；redoc 直接关闭
+            assert harness.client.get("/docs").status_code == 401
+            assert harness.client.get("/openapi.json").status_code == 401
+            assert harness.client.get("/redoc").status_code == 404
+            # 错误凭据
+            assert harness.client.get(
+                "/docs", headers={"Authorization": "Bearer nope"}
+            ).status_code == 403
+            # 正确凭据可访问
+            headers = {"Authorization": "Bearer s3cret"}
+            docs = harness.client.get("/docs", headers=headers)
+            spec = harness.client.get("/openapi.json", headers=headers)
+            assert docs.status_code == 200 and "swagger" in docs.text.lower()
+            assert spec.status_code == 200
+            assert "/api/v1/fetch-jobs" in spec.json()["paths"]
+        finally:
+            harness.jobs.stop()
+
+    def test_local_mode_docs_open(self, h):
+        assert h.client.get("/docs").status_code == 200
+        assert h.client.get("/openapi.json").status_code == 200
+        assert h.client.get("/redoc").status_code == 200

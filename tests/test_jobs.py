@@ -111,11 +111,12 @@ class TestExecution:
         assert job_id == submitted.job_id
         jobs.run_job(job_id)
         doc = jobs.get_job(job_id)
-        assert doc["status"] in ("succeeded", "partial")
+        # 正常截取为说明性信息（T6）：干净任务归 succeeded
+        assert doc["status"] == "succeeded"
         assert doc["attempt"] == 1
         assert doc["summary"]["downloaded"] == 4
         sym = doc["results"][0]
-        assert sym["status"] in ("succeeded", "partial")
+        assert sym["status"] == "succeeded"
         assert len(sym["report_ids"]) == 4
         assert all(i["artifact_id"] for i in sym["items"])
         assert doc["progress"] == {"symbols_total": 1, "symbols_finished": 1}
@@ -140,8 +141,8 @@ class TestExecution:
         doc = jobs.get_job(job_id)
         statuses = {r["symbol"]: r["status"] for r in doc["results"]}
         assert statuses["MSFT"] == "failed"
-        # AAPL 带截断质量警告 → 按契约归 partial（HTTP_API §4）
-        assert statuses["AAPL"] == "partial"
+        # AAPL 仅有正常截取说明（T6 后不再降级）→ succeeded；任务含失败证券 → partial
+        assert statuses["AAPL"] == "succeeded"
         assert doc["status"] == "partial"
 
     def test_job_deadline_exceeded(self, tmp_path):
@@ -227,3 +228,221 @@ class TestGetJob:
     def test_unknown_job(self, tmp_path):
         jobs, *_ = _harness(tmp_path)
         assert jobs.get_job("job_nope") is None
+
+
+class TestDiscoverySessionRefresh:
+    """PHASE1_REVIEW T2：常驻服务的元数据缓存按任务（发现会话）失效。"""
+
+    def _newer_rows(self):
+        from tests.test_us_edgar import _interleave_junk, _recent_fixture
+        rows = _interleave_junk(_recent_fixture()["periodic_rows_head"])
+        rows.insert(1, {  # 来源新发布的申报
+            "form": "10-Q", "filingDate": "2026-10-30",
+            "reportDate": "2026-09-26",
+            "accessionNumber": "0000320193-26-000099",
+            "primaryDocument": "aapl-20260926.htm",
+        })
+        return rows
+
+    def test_next_job_sees_newly_published_filing(self, tmp_path):
+        from tests.test_us_edgar import (
+            SUBMISSIONS_URL,
+            _json_response,
+            _submissions_payload,
+        )
+        jobs, store, service, session = _harness(tmp_path)
+        _submit(jobs, key="a")
+        jobs.run_job(jobs.claim_next())
+        first = jobs.get_job(jobs.store.connection().execute(
+            "SELECT job_id FROM jobs ORDER BY created_at LIMIT 1"
+        ).fetchone()["job_id"])
+        new_source_id = "0000320193-26-000099/aapl-20260926.htm"
+        assert all(i["source_id"] != new_source_id
+                   for i in first["results"][0]["items"])
+
+        # 来源新增申报：更换 submissions 响应后，新任务必须能看到
+        session.mapping[SUBMISSIONS_URL] = _json_response(
+            _submissions_payload(self._newer_rows()))
+        from tests.conftest import FakeResponse, HTML_DOC
+        new_doc_url = ("https://www.sec.gov/Archives/edgar/data/320193/"
+                       "000032019326000099/aapl-20260926.htm")
+        session.mapping[new_doc_url] = FakeResponse(
+            200, HTML_DOC, headers={"Content-Type": "text/html",
+                                    "Content-Length": str(len(HTML_DOC))},
+            url=new_doc_url)
+        _submit(jobs, key="b", last_n=5)
+        jobs.run_job(jobs.claim_next())
+        second = jobs.get_job(jobs.store.connection().execute(
+            "SELECT job_id FROM jobs ORDER BY created_at LIMIT 1 OFFSET 1"
+        ).fetchone()["job_id"])
+        assert any(i["source_id"] == new_source_id
+                   for i in second["results"][0]["items"])
+        # refresh 不被旧列表阻挡：新申报下载、既有原文命中缓存
+        assert second["summary"]["downloaded"] == 1
+        assert second["summary"]["cached"] == 4
+        # 每任务重新获取 submissions（两次请求），而非永久缓存
+        submissions_calls = [r for r in session.requests
+                             if r[1] == SUBMISSIONS_URL]
+        assert len(submissions_calls) == 2
+
+    def test_session_shares_ticker_map_within_job(self, tmp_path):
+        from tests.test_us_edgar import (
+            SUBMISSIONS_URL,
+            TICKERS_URL,
+            _json_response,
+            _submissions_payload,
+        )
+        jobs, store, service, session = _harness(tmp_path)
+        session.mapping["https://data.sec.gov/submissions/CIK0001652044.json"] \
+            = _json_response(_submissions_payload([]))
+        _submit(jobs, symbols=["AAPL", "GOOG"])
+        jobs.run_job(jobs.claim_next())
+        # 同一任务内两个 US 证券共享一次 ticker 映射获取
+        ticker_calls = [r for r in session.requests if r[1] == TICKERS_URL]
+        assert len(ticker_calls) == 1
+
+
+class TestAtomicSubmit:
+    """PHASE1_REVIEW T3：幂等查找、队列限额与插入在同一写事务内。"""
+
+    @staticmethod
+    def _run_concurrently(fn) -> list:
+        import threading
+        barrier = threading.Barrier(2)
+        results: list = []
+
+        def worker():
+            barrier.wait()
+            try:
+                results.append(("ok", fn()))
+            except Exception as e:  # noqa: BLE001
+                results.append(("err", e))
+
+        threads = [threading.Thread(target=worker) for _ in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        return results
+
+    def test_same_key_same_request_yields_single_job(self, tmp_path):
+        jobs, store, *_ = _harness(tmp_path)
+        results = self._run_concurrently(
+            lambda: _submit(jobs, key="k", symbols=["AAPL"]))
+        oks = [r[1] for r in results if r[0] == "ok"]
+        assert len(oks) == 2, results
+        assert len({s.job_id for s in oks}) == 1      # 同一 job_id
+        assert sum(1 for s in oks if s.created) == 1  # 只创建一次
+        n = store.connection().execute("SELECT COUNT(*) n FROM jobs").fetchone()["n"]
+        assert n == 1
+
+    def test_same_key_different_request_one_conflict(self, tmp_path):
+        jobs, *_ = _harness(tmp_path)
+        outcomes: dict[int, object] = {}
+
+        def worker(i):
+            return i
+
+        import threading
+        barrier = threading.Barrier(2)
+
+        def run(index, last_n):
+            barrier.wait()
+            try:
+                _submit(jobs, key="k", symbols=["AAPL"], last_n=last_n)
+                outcomes[index] = "ok"
+            except JobConflictError:
+                outcomes[index] = "conflict"
+
+        threads = [threading.Thread(target=run, args=(i, 3 + i))
+                   for i in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert sorted(outcomes.values()) == ["conflict", "ok"]
+
+    def test_different_keys_compete_for_last_queue_slot(self, tmp_path):
+        config = _config(max_pending_jobs=1)
+        jobs, store, *_ = _harness(tmp_path, config=config)
+        import threading
+        barrier = threading.Barrier(2)
+        outcomes: dict[int, str] = {}
+
+        def run(index, key):
+            barrier.wait()
+            try:
+                _submit(jobs, key=key)
+                outcomes[index] = "ok"
+            except QueueFullError:
+                outcomes[index] = "full"
+
+        threads = [threading.Thread(target=run, args=(i, f"k{i}"))
+                   for i in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert sorted(outcomes.values()) == ["full", "ok"]
+        n = store.connection().execute(
+            "SELECT COUNT(*) n FROM jobs WHERE status='queued'").fetchone()["n"]
+        assert n == 1  # 限额不可突破
+
+
+class TestStatusMatrix:
+    """PHASE1_REVIEW T6：按实际可用文件与质量缺口汇总状态。"""
+
+    def test_all_downloads_failed_job_failed(self, tmp_path):
+        from tests.conftest import FakeResponse
+        from tests.test_us_edgar import TICKERS_URL, SUBMISSIONS_URL
+        from tests.test_core_pipeline import _archive_urls
+        jobs, store, service, session = _harness(tmp_path)
+        for url in _archive_urls():
+            session.mapping[url] = FakeResponse(403, b"Forbidden")
+        _submit(jobs)
+        jobs.run_job(jobs.claim_next())
+        job_id = store.connection().execute(
+            "SELECT job_id FROM jobs LIMIT 1").fetchone()["job_id"]
+        doc = jobs.get_job(job_id)
+        assert doc["status"] == "failed"
+        assert doc["results"][0]["status"] == "failed"
+        assert doc["summary"] == {"downloaded": 0, "cached": 0, "failed": 4}
+        assert doc["results"][0]["report_ids"] == []
+
+    def test_partial_download_failure_job_partial(self, tmp_path):
+        from tests.conftest import FakeResponse
+        from tests.test_core_pipeline import _archive_urls
+        jobs, store, service, session = _harness(tmp_path)
+        bad_url = _archive_urls()[0]
+        session.mapping[bad_url] = FakeResponse(403, b"Forbidden")
+        _submit(jobs)
+        jobs.run_job(jobs.claim_next())
+        job_id = store.connection().execute(
+            "SELECT job_id FROM jobs LIMIT 1").fetchone()["job_id"]
+        doc = jobs.get_job(job_id)
+        assert doc["status"] == "partial"
+        assert doc["summary"] == {"downloaded": 3, "cached": 0, "failed": 1}
+        assert len(doc["results"][0]["report_ids"]) == 3
+
+    def test_insufficient_history_is_partial(self, tmp_path):
+        jobs, store, *_ = _harness(tmp_path)
+        _submit(jobs, last_n=20)   # 来源只有 12 组 < 20
+        jobs.run_job(jobs.claim_next())
+        job_id = store.connection().execute(
+            "SELECT job_id FROM jobs LIMIT 1").fetchone()["job_id"]
+        doc = jobs.get_job(job_id)
+        assert doc["status"] == "partial"
+        coverage = doc["results"][0]["coverage"]
+        assert coverage["insufficient_history"] is True
+        assert coverage["selected"] == 12 < coverage["requested"] == 20
+
+    def test_clean_job_succeeded_with_notice(self, tmp_path):
+        jobs, store, *_ = _harness(tmp_path)
+        _submit(jobs, last_n=4)
+        jobs.run_job(jobs.claim_next())
+        job_id = store.connection().execute(
+            "SELECT job_id FROM jobs LIMIT 1").fetchone()["job_id"]
+        doc = jobs.get_job(job_id)
+        assert doc["status"] == "succeeded"
+        assert doc["results"][0]["warnings"] == []
+        assert doc["results"][0]["coverage"].get("notices")  # 截取为说明

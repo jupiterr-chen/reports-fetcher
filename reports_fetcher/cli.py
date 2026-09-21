@@ -130,8 +130,12 @@ def _print_coverage(coverage: dict) -> None:
         window = f"，检索窗口 {coverage['searched_from']}..{coverage['searched_to']}"
     exhausted = "已穷尽" if coverage.get("exhausted") else "未穷尽"
     truncated = "，预算截断" if coverage.get("truncated") else ""
+    insufficient = "，历史不足" if coverage.get("insufficient_history") else ""
     print(f"  覆盖: {coverage.get('selected')}/{coverage.get('requested')} 个逻辑报告组"
-          f"（共发现 {coverage.get('total_groups')}）{exhausted}{truncated}{window}")
+          f"（共发现 {coverage.get('total_groups')}）{exhausted}{truncated}{insufficient}{window}")
+    # 说明性信息（正常截取/语言选择）不参与状态与退出码（PHASE1_REVIEW T6）
+    for notice in coverage.get("notices") or []:
+        print(f"  说明: {notice}")
 
 
 def _print_warnings(warnings: list[str]) -> None:
@@ -239,9 +243,6 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         service = FetchService.from_config(config)
         try:
-            if args.command in ("fetch", "list"):
-                # 归档根目录单写者锁（list 也写 symbol_map，DESIGN §11.4/§12）
-                service.store.acquire_owner_lock()
             if args.command == "fetch":
                 return _cmd_fetch(service, args)
             if args.command == "list":

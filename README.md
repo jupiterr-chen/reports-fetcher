@@ -23,7 +23,7 @@ SEC_UA_EMAIL=you@example.com docker compose run --rm cli \
 # 3) 归档结果（宿主机 ./reports/）
 #    reports/US/AAPL/2026-06-27__10-Q__aapl-20260627.htm__<report_id>__<artifact_id>.html
 #    reports/CN/600519/2026-06-30__H1__贵州茅台2026年半年度报告__....pdf
-#    reports/HK/00700/2025-12-31__ANNUAL__2025 年報__....pdf
+#    reports/HK/00700/unknown__ANNUAL__2025 年報__....pdf（港股标题无期末日证据，见已知限制）
 ```
 
 国内网络可覆盖 `BASE_IMAGE` / `PIP_INDEX_URL`（默认本地 `python:3.12-slim` + 清华 pip 源）。
@@ -44,7 +44,7 @@ docker compose run --rm cli version
 | `--out / --layout / --config` | 归档目录 / flat·nested 布局 / 配置文件 |
 
 - 代码别名：`600519 / sh600519 / 600519.SH`、`0700.HK / 700`（补零 5 位）、`aapl / BRK-B`（连字符类股）均可用；北交所显式返回 `unsupported_market_segment`。
-- 退出码：`0` 成功或纯空查询；`1` 有可用结果但存在警告/缺口；`2` 全无结果且有执行错误 / 参数错误。
+- 退出码：`0` 成功或纯空查询；`1` 有可用结果但存在质量警告/缺口（正常 `--last` 截取与语言选择属说明性信息，不计缺口）；`2` 全无结果且有执行错误 / 参数错误。
 - 立即重跑全部命中缓存（SHA-256 复核）；单证券失败不影响整批；强杀后重跑自动收敛（无半文件、无脏 done）。
 
 ## HTTP 服务
@@ -123,7 +123,7 @@ SEC_UA_EMAIL=you@example.com docker compose run --rm probe   # 来源契约探�
 ## 已知限制
 
 - 6-K 业绩附件、40-F、北交所不在一期范围（显式报 `unsupported_form` / `unsupported_market_segment`）；QTR-HK 需显式请求且仅覆盖 `[季度業績]` 公告。
-- 港股非日历年结公司（跨年标题如 `2024/25 年報`）报告期不可得 → `unknown` + 警告（不猜测，铁律）。
+- 港股报告标题（单年 `2025 年報` 与跨年 `2024/25 年報` 均含）只有年份语义、无期末日证据 → `unknown` + 警告（不猜测，铁律）；仅业绩公告（`截至…止`）有明确期末日。
 - 披露易 `prefix.do` 为去零前缀搜索，个别代码（如 00011）在其索引中缺席 → `symbol_not_found`（源站数据现实，已留 fixture）。
 - SEC HTML 主文档为 Inline XBRL，一期不恢复图片/CSS 等离线资源。
 - P0 单进程单执行器、共享档案库；无 Webhook/任务取消/多租户；来源请求合并计入各市场限速预算（SEC 域名合计 ≤8 req/s 保守值）。

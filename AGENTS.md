@@ -2,9 +2,10 @@
 
 一句话：输入 A股/港股/美股代码 → 获取最新 N 份定期财报原文 → 按 市场/代码/财报日期 归档 + SQLite 索引；CLI + HTTP 双入口，Docker 为主力运行方式。
 
-## 当前状态（2026-09-21）——**一期已完成（v1.0.0）**
+## 当前状态（2026-09-21）——**一期 v1.0.1（评审修复后）**
 
 - I0–I6 全部交付：三市场 CLI 归档（I3 起可用）、可靠性硬化（I4）、HTTP 服务（I5）、验收发布（I6）。
+- PHASE1_REVIEW T1–T7 已全部修复（[docs/PHASE1_FIXES.md](docs/PHASE1_FIXES.md)，320 单测全绿）；目标服务器部署冒烟按 [DEPLOY.md](DEPLOY.md) 待执行。
 - 验收留证：[docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)（ARCHITECTURE §10 逐条核对 + 冒烟矩阵 + 性能基线 + 偏差记录）；使用文档：[README.md](README.md)。
 - **后续**：内容提取/指标/基本面分析按 [ANALYSIS_ROADMAP.md](ANALYSIS_ROADMAP.md) 另立计划（二期+）；backlog 见 ITERATION_PLAN §7。
 - CLI：`SEC_UA_EMAIL=<邮箱> docker compose run --rm cli fetch AAPL 600519 0700.HK --last 4`；HTTP：`docker compose up -d serve`（127.0.0.1:8000）。

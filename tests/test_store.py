@@ -422,37 +422,57 @@ class TestSymbolMap:
 
 
 class TestOwnerLock:
-    """进程级所有者锁（DESIGN §11.4，DoD #4）：第二个写实例报 store_in_use。"""
+    """进程级所有者锁（DESIGN §11.4；PHASE1_REVIEW T1：锁先于 schema/恢复）。"""
 
-    def test_second_store_on_same_root_rejected(self, tmp_path):
+    def test_second_store_construction_rejected_without_side_effects(
+            self, tmp_path):
+        """持锁实例有在途意图与临时文件时，第二实例构造即被拒绝且状态不变。"""
         root = tmp_path / "archive"
         first = Store(root)
-        first.acquire_owner_lock()
-        second = Store(root)
+        report = make_report()
+        ref = first.upsert_report(report)
+        first.register_download(ref.report_id)   # 在途 registered 意图
+        stray = first.tmp_dir / ".tmp-t1.part"
+        stray.write_bytes(b"in-flight download")
+        conn_before = sqlite3.connect(root / "archive.sqlite3")
+        intent_before = conn_before.execute(
+            "SELECT state FROM archive_intents").fetchone()[0]
+        conn_before.close()
+
         with pytest.raises(StoreError) as ei:
-            second.acquire_owner_lock()
+            Store(root)                          # 第二实例：构造期即拒绝
         assert ei.value.code == "store_in_use"
-        first.close()
-        # 持锁进程退出/关闭后自动释放，重跑不被阻塞
-        third = Store(root)
-        third.acquire_owner_lock()
-        third.close()
+
+        # 数据库状态与临时文件均未被第二实例触碰（T1 验收）
+        conn_after = sqlite3.connect(root / "archive.sqlite3")
+        intent_after = conn_after.execute(
+            "SELECT state FROM archive_intents").fetchone()[0]
+        conn_after.close()
+        assert intent_after == intent_before == "registered"
+        assert stray.read_bytes() == b"in-flight download"
+
+        first.close()                            # 所有者退出
+        fresh = Store(root)                      # 新实例可正确恢复遗留状态
+        stray_after = fresh.tmp_dir / ".tmp-t1.part"
+        assert not stray_after.exists()          # 恢复清扫未完成临时文件
+        conn = sqlite3.connect(root / "archive.sqlite3")
+        assert conn.execute("SELECT state FROM archive_intents").fetchone()[0] \
+            == "failed"
+        conn.close()
+        fresh.close()
 
     def test_double_acquire_on_same_store_is_noop(self, tmp_path):
-        store = Store(tmp_path / "archive")
-        store.acquire_owner_lock()
-        store.acquire_owner_lock()  # 幂等
+        store = Store(tmp_path / "archive")      # 构造即持锁
+        store.acquire_owner_lock()               # 幂等
         store.close()
 
-    def test_reopen_after_kill_style_release(self, tmp_path):
-        # 模拟强杀：锁释放（flock 随进程死亡回收）、库不清理，重跑可立即持锁
+    def test_release_allows_reopen(self, tmp_path):
         root = tmp_path / "archive"
         holder = Store(root)
-        holder.acquire_owner_lock()
         holder.release_owner_lock()
         fresh = Store(root)
-        fresh.acquire_owner_lock()
         fresh.close()
+        holder.close()
 
 
 class TestRefreshVersions:

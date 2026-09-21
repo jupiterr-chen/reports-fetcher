@@ -29,7 +29,8 @@ class SelectionResult:
     selected: list[Report] = field(default_factory=list)
     total_groups: int = 0
     selected_count: int = 0
-    warnings: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)   # 影响完整性的质量警告
+    notices: list[str] = field(default_factory=list)    # 说明性信息（PHASE1_REVIEW T6）
 
 
 def _group_key(report: Report) -> tuple:
@@ -80,26 +81,31 @@ def select_reports(candidates: list[Report], query: ReportQuery,
 
     selected_groups: list[list[Report]] = []
     for key, members in groups.items():
-        # 3) 排除摘要/通知：无法证明为全文的不计作成功全文
+        # 3) 排除摘要/通知/未确认修订：无法证明为全文的不计作成功全文
         full_versions = [r for r in members if r.document_role in _FULL_ROLES]
         if not full_versions:
             non_full = [r for r in members
                         if r.document_role in (DocumentRole.NOTICE,
-                                               DocumentRole.SUMMARY)]
+                                               DocumentRole.SUMMARY,
+                                               DocumentRole.UNKNOWN)]
             if non_full:
                 skipped = [r.source_id for r in non_full]
                 logger.debug("报告组 %s/%s 无全文版本，排除候选 %s",
                              key[2], key[3], skipped)
                 result.warnings.append(
-                    f"报告组 {key[2]}/{key[3]} 仅有摘要或修订通知，"
-                    f"未获得全文（跳过: {skipped}）")
+                    f"报告组 {key[2]}/{key[3]} 仅有摘要、修订通知或"
+                    f"未确认修订，未获得全文（跳过: {skipped}）")
             continue
-        # 仅有修订通知时仍可选择原全文，但必须警告未合并修订（DESIGN §5）
-        unmerged = [r for r in members if r.document_role is DocumentRole.NOTICE]
+        # 仅有修订通知/未确认修订时仍选择原全文，但必须警告未合并
+        # （DESIGN §5；PHASE1_REVIEW T4）
+        unmerged = [r for r in members if r.document_role is DocumentRole.NOTICE
+                    or (r.is_amendment
+                        and r.document_role is DocumentRole.UNKNOWN)]
         if unmerged:
             result.warnings.append(
-                f"报告组 {key[2]}/{key[3]} 存在更正/修订通知未合并"
-                f"（{[r.source_id for r in unmerged]}），分析时注意版本时效")
+                f"报告组 {key[2]}/{key[3]} 存在未合并的修订（更正通知或"
+                f"未确认完整性的修订版，{[r.source_id for r in unmerged]}），"
+                f"分析时注意版本时效")
         # 4) 语言选择：优先偏好语言；不因语言丢弃唯一全文（回退 + 警告）
         chosen = _select_language(full_versions, language_preference, key, result)
         # 5) 组内版本选择：最新可确认完整版本（公告时间倒序）
@@ -120,7 +126,8 @@ def select_reports(candidates: list[Report], query: ReportQuery,
         result.warnings.append(
             f"{len(unknown)} 份报告报告期未知（period_source=unknown），已置于结果末尾")
     if result.total_groups > query.last_n:
-        result.warnings.append(
+        # 正常取最新 N 份的截取属说明性信息，不降级状态（PHASE1_REVIEW T6）
+        result.notices.append(
             f"共发现 {result.total_groups} 个逻辑报告组，按 --last {query.last_n} 截断")
     return result
 
@@ -142,7 +149,8 @@ def _select_language(full_versions: list[Report],
         subset = [r for r in full_versions if r.language == lang]
         if subset:
             skipped = sorted(languages - {lang})
-            result.warnings.append(
+            # 偏好语言可用时的正常选择：说明性信息（PHASE1_REVIEW T6）
+            result.notices.append(
                 f"报告组 {key[2]}/{key[3]} 存在多语言版本，选择 {lang}"
                 f"（跳过 {skipped}）")
             return subset

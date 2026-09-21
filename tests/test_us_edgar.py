@@ -204,7 +204,12 @@ class TestListReports:
         with pytest.raises(SourceContractChangedError):
             adapter.list_reports(resolved, ReportQuery(last_n=4))
 
-    def test_amendment_grouped_and_linked(self):
+    def test_amendment_kept_as_unverified_relation(self):
+        """PHASE1_REVIEW T4：/A 元数据无完整性证据 → 不覆盖原全文。
+
+        保留 source_form/is_amendment/revision_of 与警告；组内有原全文时
+        选择原全文并警告未合并；缺证据的修订不能独自计作完整财报。
+        """
         rows = _interleave_junk(_recent_fixture()["periodic_rows_head"])
         rows.insert(1, {  # 插在首条定期行前：同组修订版
             "form": "10-K/A", "filingDate": "2025-12-15",
@@ -220,13 +225,33 @@ class TestListReports:
         assert len(amend) == 1
         assert amend[0].doc_type == "10-K"          # /A 归入基础类型
         assert amend[0].source_form == "10-K/A"
-        assert amend[0].document_role is DocumentRole.AMENDMENT_FULL
+        assert amend[0].document_role is DocumentRole.UNKNOWN  # 未确认全文
         assert amend[0].revision_of == "0000320193-25-000079/aapl-20250927.htm"
+        assert any("未确认全文重发" in w for w in discovery.warnings)
         selection = select_reports(discovery.reports, ReportQuery(last_n=4),
                                    language_preference=["en"])
         chosen = [r for r in selection.selected
                   if r.report_period == "2025-09-27"]
-        assert chosen[0].source_id == "0000320193-25-000099/aapl-20250927x10ka.htm"
+        # 原全文胜出；未合并修订必须警告
+        assert chosen[0].source_id == "0000320193-25-000079/aapl-20250927.htm"
+        assert chosen[0].document_role is DocumentRole.FULL_REPORT
+        assert any("未合并" in w for w in selection.warnings)
+
+    def test_unverified_amendment_alone_not_full(self):
+        """组内仅有缺证据修订（无原全文）→ 不计作完整财报。"""
+        row = {
+            "form": "10-K/A", "filingDate": "2025-12-15",
+            "reportDate": "2025-09-27",
+            "accessionNumber": "0000320193-25-000099",
+            "primaryDocument": "aapl-20250927x10ka.htm",
+        }
+        adapter, _ = _adapter_with_recent([row])
+        resolved = adapter.resolve(normalize_symbol("AAPL"))
+        discovery = adapter.list_reports(resolved, ReportQuery(last_n=4))
+        selection = select_reports(discovery.reports, ReportQuery(last_n=4),
+                                   language_preference=["en"])
+        assert selection.selected_count == 0
+        assert any("未确认修订" in w for w in selection.warnings)
 
     def test_empty_reportdate_becomes_unknown_with_warning(self):
         rows = [dict(r) for r in _interleave_junk(_recent_fixture()["periodic_rows_head"])]

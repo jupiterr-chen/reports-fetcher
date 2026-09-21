@@ -123,22 +123,21 @@ class TestChineseSmallNumber:
 
 
 class TestTitlePeriod:
-    @pytest.mark.parametrize("title,period", [
-        ("中期報告 2026", "2026-06-30"),
-        ("2025 年報", "2025-12-31"),
-        ("二零二四年年報", "2024-12-31"),
-        ("中期報告 二零二五年", "2025-06-30"),
+    """PHASE1_REVIEW T5：仅明确期末日可设期；单年/跨年标签均 unknown。"""
+
+    @pytest.mark.parametrize("title", [
+        "中期報告 2026", "2025 年報", "二零二四年年報",
+        "中期報告 二零二五年",
         # 匯豐形態（I3 e2e 实测 2026-09-21）：年份在前的中期業績報告
-        ("2026年中期業績報告(附僱員股份計劃)", "2026-06-30"),
-        ("2024年中期業績報告", "2024-06-30"),
-        # 匯豐年報及賬目形態：(\d{4})年報 前缀命中
-        ("2016年報及賬目(附僱員股份計劃)", "2016-12-31"),
+        "2026年中期業績報告(附僱員股份計劃)",
+        "2024年中期業績報告",
+        "2016年報及賬目(附僱員股份計劃)",
     ])
-    def test_single_year_labels(self, title, period):
+    def test_year_labels_without_end_date_are_unknown(self, title):
         parsed, source, warning = parse_hk_title_period(title)
-        assert parsed == period
-        assert source is PeriodSource.EXPLICIT_TITLE
-        assert warning is None
+        assert parsed is None
+        assert source is PeriodSource.UNKNOWN
+        assert warning and "不猜测" in warning
 
     @pytest.mark.parametrize("title", [
         "2024/25 年報", "2025/26 中期報告", "2024/25年中期業績報告",
@@ -147,7 +146,7 @@ class TestTitlePeriod:
         parsed, source, warning = parse_hk_title_period(title)
         assert parsed is None
         assert source is PeriodSource.UNKNOWN
-        assert warning and "不猜测" in warning
+        assert warning and "跨年标签" in warning
 
     @pytest.mark.parametrize("title,period", [
         ("截至二零二六年三月三十一日止三個月業績公佈", "2026-03-31"),
@@ -158,6 +157,7 @@ class TestTitlePeriod:
         parsed, source, warning = parse_hk_title_period(title)
         assert parsed == period
         assert source is PeriodSource.EXPLICIT_TITLE
+        assert warning is None
 
     def test_no_year(self):
         parsed, source, warning = parse_hk_title_period("季度報告")
@@ -261,10 +261,13 @@ class TestListReports:
         assert {r.doc_type for r in discovery.reports} == {"ANNUAL", "INTERIM"}
         assert all(r.document_role is DocumentRole.FULL_REPORT
                    for r in discovery.reports)
-        # 单年标签 → 日历年结期末（DESIGN §7）
+        # 单年标签无期末日证据 → 期未知 + 警告（PHASE1_REVIEW T5）
         by_title = {r.title: r for r in discovery.reports}
-        assert by_title["中期報告 2026"].report_period == "2026-06-30"
-        assert by_title["2025 年報"].report_period == "2025-12-31"
+        assert by_title["中期報告 2026"].report_period is None
+        assert by_title["2025 年報"].report_period is None
+        assert all(r.period_source is PeriodSource.UNKNOWN
+                   for r in discovery.reports)
+        assert any("年份标签" in w for w in discovery.warnings)
         # 發放時間 DD/MM/YYYY → Asia/Hong_Kong 公告日
         assert by_title["中期報告 2026"].filing_date == "2026-08-25"
         assert by_title["中期報告 2026"].source_metadata["subcategory"] == "中期/半年度報告"
@@ -288,9 +291,11 @@ class TestListReports:
         discovery = adapter.list_reports(resolved, ReportQuery(last_n=4))
         selection = select_reports(discovery.reports, ReportQuery(last_n=4),
                                    language_preference=["zh", "en"])
-        assert [(r.doc_type, r.report_period) for r in selection.selected] == [
-            ("INTERIM", "2026-06-30"), ("ANNUAL", "2025-12-31"),
-            ("INTERIM", "2025-06-30"), ("ANNUAL", "2024-12-31")]
+        # 期均未知 → 按公告日倒序（T5 后的预期形态）
+        assert [(r.doc_type, r.report_period, r.filing_date)
+                for r in selection.selected] == [
+            ("INTERIM", None, "2026-08-25"), ("ANNUAL", None, "2026-04-09"),
+            ("INTERIM", None, "2025-08-26"), ("ANNUAL", None, "2025-04-08")]
 
     def test_0016_non_calendar_year_null_periods(self):
         adapter, _session = _make_adapter([
@@ -357,6 +362,21 @@ class TestListReports:
         assert any("t1code=40000" in u for u in urls)
         assert any("t1code=10000" in u for u in urls)
         assert len(discovery.reports) == 7  # 6 + 1 QTR-HK
+
+    def test_combined_annual_esg_subcategory_mapped_as_annual(self):
+        """回归实测（2026-09-21）：合并子类别"年報 / 環境…報告" → ANNUAL。"""
+        raw = _raw("search_00700_40000_3y.raw.html")
+        raw = raw.replace("[年報]", "[年報 &#x2f; 環境、社會及管治資料&#x2f;報告]", 1)
+        adapter, _ = _make_adapter([
+            (PREFIX_URL_PREFIX, _jsonp_response(_PREFIX_00700_BODY)),
+            (SEARCH_URL_PREFIX, _html_response(raw)),
+        ])
+        resolved = _resolve_00700(adapter)
+        discovery = adapter.list_reports(resolved, ReportQuery(last_n=4))
+        assert len(discovery.reports) == 6  # 合并标签不丢年报
+        combined = [r for r in discovery.reports if r.title == "2025 年報"][0]
+        assert combined.doc_type == "ANNUAL"
+        assert combined.source_metadata["subcategory"] ==             "年報 / 環境、社會及管治資料/報告"
 
     def test_unknown_subcategory_warns(self):
         # 真实结构上合成值：未知子类别的 headline（契约漂移告警留痕）

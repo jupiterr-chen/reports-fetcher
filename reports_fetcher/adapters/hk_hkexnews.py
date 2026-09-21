@@ -16,9 +16,10 @@
 - 单页返回窗口内全部结果；站点显示上限 1000 条，超限按年切窗（不做
   load-more 模拟）；
 - 免 Cookie/免预热；偶发 TLS 握手重置由传输层显式重试兜底；
-- 标题期末规则：明确期末日（截至…止）→ explicit_title；单年标签 →
-  日历年结语义（年報→12-31、中期報告→6-30）；跨年标签（2024/25 年報，
-  非日历年结公司）→ 日历期末不可得 → null + unknown + 警告（不猜测）。
+- 标题期末规则（PHASE1_REVIEW T5 后）：仅"明确期末日"（截至…止，
+  如业绩公告标题）→ explicit_title；单年标签（2025 年報 / 中期報告 2026）
+  与跨年标签（2024/25 年報）都只有年份语义、无期末日证据 →
+  null + unknown + 警告（不按 12-31/06-30 拼接）。
 """
 from __future__ import annotations
 
@@ -271,7 +272,12 @@ def strip_jsonp(text: str, callback: str = "callback") -> str:
 
 def parse_hk_title_period(title: str) -> tuple[str | None, PeriodSource,
                                                str | None]:
-    """HK 标题 → (报告期, period_source, 警告|None)。未知即 None，不猜测。"""
+    """HK 标题 → (报告期, period_source, 警告|None)。
+
+    PHASE1_REVIEW T5：仅"明确期末日"（截至…止）可设期；单年标签与跨年
+    标签都只包含年份语义、没有期末日证据 → null + unknown + 警告，
+    不按 12-31/06-30 财季惯例拼接（AGENTS 数据质量铁律 / DESIGN §9）。
+    """
     explicit = _HK_EXPLICIT_DATE_RE.search(title)
     if explicit:
         year = chinese_year(explicit.group("y"))
@@ -287,19 +293,13 @@ def parse_hk_title_period(title: str) -> tuple[str | None, PeriodSource,
         # 跨年标签（如 2024/25 年報）：非日历年结公司，日历期末不可得
         return (None, PeriodSource.UNKNOWN,
                 "跨年标签（非日历年结公司），日历期末不可得，不猜测")
-    for pattern, default_month_day in ((_HK_ANNUAL_YEAR_RE, "12-31"),
-                                       (_HK_INTERIM_YEAR_RE, "06-30"),
-                                       (_HK_INTERIM_YEAR_BEFORE_RE, "06-30"),
-                                       (_HK_CN_ANNUAL_YEAR_RE, "12-31"),
-                                       (_HK_CN_INTERIM_YEAR_RE, "06-30")):
-        match = pattern.search(title)
-        if match:
-            year = chinese_year(match.group(1))
-            if year:
-                # 单年标签 = 日历年结语义（DESIGN §7）
-                return (f"{year}-{default_month_day}",
-                        PeriodSource.EXPLICIT_TITLE, None)
-    return (None, PeriodSource.UNKNOWN, "标题无可确认的期末日或年份")
+    for pattern in (_HK_ANNUAL_YEAR_RE, _HK_INTERIM_YEAR_RE,
+                    _HK_INTERIM_YEAR_BEFORE_RE, _HK_CN_ANNUAL_YEAR_RE,
+                    _HK_CN_INTERIM_YEAR_RE):
+        if pattern.search(title):
+            return (None, PeriodSource.UNKNOWN,
+                    "仅有年份标签、无期末日证据，不猜测")
+    return (None, PeriodSource.UNKNOWN, "标题无可确认的期末日")
 
 
 def _release_datetime(value: str) -> datetime | None:
@@ -394,7 +394,7 @@ class HKHkexnewsAdapter(BaseMarketAdapter):
         if valid_forms & {"ANNUAL", "INTERIM"}:
             used_requests, truncated = self._search_windows(
                 symbol, from_date, today, t1_code="40000", title="",
-                keep_subcategories=("年報", "中期/半年度報告"),
+                keep_doc_types={"ANNUAL", "INTERIM"},
                 valid_forms=valid_forms, candidates=candidates,
                 warnings=result.warnings, budget=query.max_discovery_requests,
                 used_requests=used_requests)
@@ -403,7 +403,7 @@ class HKHkexnewsAdapter(BaseMarketAdapter):
         if "QTR-HK" in valid_forms:
             used_requests, truncated = self._search_windows(
                 symbol, from_date, today, t1_code="10000", title="業績",
-                keep_subcategories=("季度業績",),
+                keep_doc_types={"QTR-HK"},
                 valid_forms=valid_forms, candidates=candidates,
                 warnings=result.warnings, budget=query.max_discovery_requests,
                 used_requests=used_requests)
@@ -419,7 +419,7 @@ class HKHkexnewsAdapter(BaseMarketAdapter):
 
     def _search_windows(self, symbol: ResolvedSymbol, from_date: date,
                         to_date: date, *, t1_code: str, title: str,
-                        keep_subcategories: tuple[str, ...],
+                        keep_doc_types: set[str],
                         valid_forms: set[str], candidates: list[Report],
                         warnings: list[str], budget: int,
                         used_requests: int) -> tuple[int, bool]:
@@ -457,7 +457,7 @@ class HKHkexnewsAdapter(BaseMarketAdapter):
                 windows = _split_year_windows(win_from, win_to) + windows
                 continue
             for row in rows:
-                self._append_candidate(row, symbol, keep_subcategories,
+                self._append_candidate(row, symbol, keep_doc_types,
                                        valid_forms, candidates, warnings,
                                        source_search=t1_code)
         return used_requests, truncated
@@ -465,7 +465,7 @@ class HKHkexnewsAdapter(BaseMarketAdapter):
     # ------------------------------------------------------------ 候选构建
 
     def _append_candidate(self, row: dict, symbol: ResolvedSymbol,
-                          keep_subcategories: tuple[str, ...],
+                          keep_doc_types: set[str],
                           valid_forms: set[str], candidates: list[Report],
                           warnings: list[str], *, source_search: str) -> None:
         headline = row.get("headline") or ""
@@ -474,6 +474,14 @@ class HKHkexnewsAdapter(BaseMarketAdapter):
         if subcategory in _KNOWN_EXCLUDED:
             return  # ESG 报告等已知非财报类，与财报同在 t1=40000（DESIGN §7）
         mapped = _SUBCATEGORY_MAP.get(subcategory)
+        if mapped is None:
+            # 回归实测（2026-09-21，PHASE1_REVIEW 修复期）：旧年份存在合并
+            # 子类别"年報 / 環境、社會及管治資料/報告"——按包含关系判定，
+            # 纯 ESG 子类别已在上方精确排除，不会落入这两条包含规则。
+            if "年報" in subcategory:
+                mapped = ("ANNUAL", DocumentRole.FULL_REPORT)
+            elif "中期報告" in subcategory or "半年度報告" in subcategory:
+                mapped = ("INTERIM", DocumentRole.FULL_REPORT)
         if mapped is None:
             # t1=10000 检索中的中期/末期業績公告属已知形态（内容与
             # INTERIM/ANNUAL 报告重复），静默跳过；其余未知子类别告警留痕
@@ -485,7 +493,7 @@ class HKHkexnewsAdapter(BaseMarketAdapter):
         doc_type, role = mapped
         if doc_type not in valid_forms:
             return
-        if subcategory not in keep_subcategories:
+        if doc_type not in keep_doc_types:
             return
         file_link = row.get("file_link") or ""
         if not file_link:

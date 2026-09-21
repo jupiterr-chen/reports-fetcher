@@ -159,13 +159,18 @@ class JobService:
 
         conn = self.store.connection()
         now = _utcnow()
-        with conn:
+        # PHASE1_REVIEW T3：幂等查找、队列计数与插入必须同一写事务
+        # （BEGIN IMMEDIATE 立即取得写锁），并发提交不再竞态：同键同请求
+        # 重放、同键异请求 409、队列限额不可突破；事务内不联网。
+        try:
+            conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
                 "SELECT job_id, status, request_hash FROM jobs "
                 "WHERE client_id=? AND idempotency_key=?",
                 (client_id, idempotency_key)).fetchone()
             if row is not None:
                 if row["request_hash"] != request_hash:
+                    conn.rollback()
                     raise JobConflictError(
                         "相同幂等键已被不同请求占用（HTTP_API §4）",
                         detail=f"job_id={row['job_id']}")
@@ -173,6 +178,7 @@ class JobService:
                 submitted_at = conn.execute(
                     "SELECT submitted_at FROM jobs WHERE job_id=?",
                     (row["job_id"],)).fetchone()["submitted_at"]
+                conn.commit()
                 return SubmittedJob(row["job_id"], row["status"],
                                     created=False, finished=finished,
                                     submitted_at=submitted_at)
@@ -180,6 +186,7 @@ class JobService:
                 "SELECT COUNT(*) AS n FROM jobs "
                 "WHERE status IN ('queued','running')").fetchone()["n"]
             if pending >= self.config.server.max_pending_jobs:
+                conn.rollback()
                 raise QueueFullError(
                     f"待处理任务已达上限（{self.config.server.max_pending_jobs}）")
             job_id = f"job_{uuid.uuid4().hex[:20]}"
@@ -191,6 +198,11 @@ class JobService:
                    VALUES(?,?,?,?,?, 'queued', 0, ?, ?, ?)""",
                 (job_id, client_id, idempotency_key, request_hash,
                  json.dumps(effective, ensure_ascii=False), now, now, now))
+            conn.commit()
+        except Exception:
+            if conn.in_transaction:
+                conn.rollback()
+            raise
         self._wake.set()
         logger.info("任务入队 %s (client=%s symbols=%d)", job_id, client_id,
                     len(ordered))
@@ -310,6 +322,7 @@ class JobService:
                 deadline_ts = None
 
         service = self._factory()
+        service.begin_discovery_session()   # 每任务重新获取元数据（T2）
         summary = {"downloaded": 0, "cached": 0, "failed": 0}
         symbol_statuses: list[str] = []
         try:

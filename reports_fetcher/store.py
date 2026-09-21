@@ -248,6 +248,10 @@ class Store:
         self.db_path = self.root / "archive.sqlite3"
         self._local = threading.local()
         self._lock_fh = None
+        # 所有者锁必须先于任何共享状态修改（PHASE1_REVIEW T1）：schema
+        # 初始化与崩溃恢复都只在持锁后执行，第二实例被拒绝时库与临时
+        # 文件保持原状；构造失败不留下半初始化状态。
+        self.acquire_owner_lock()
         self._init_schema()
         self._recover()
 
@@ -274,10 +278,11 @@ class Store:
     # ------------------------------------------------------------- 进程锁
 
     def acquire_owner_lock(self) -> None:
-        """归档根目录进程级所有者锁（DESIGN §11.4）。
+        """归档根目录进程级所有者锁（DESIGN §11.4，PHASE1_REVIEW T1）。
 
-        flock 非阻塞独占：第二个写实例明确报 store_in_use；
-        持锁进程死亡时由内核自动释放（强杀后重跑不被阻塞）。
+        flock 非阻塞独占；构造 Store 即持锁，schema/恢复均在锁内。
+        第二写实例在构造期即报 store_in_use，且此前不触碰数据库与
+        临时文件。持锁进程死亡时由内核自动释放（强杀后重跑不被阻塞）；
         跨容器互斥已在主力环境（Windows Docker Desktop bind mount）实测。
         """
         if self._lock_fh is not None:

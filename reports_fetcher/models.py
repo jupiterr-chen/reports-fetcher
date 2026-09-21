@@ -260,7 +260,8 @@ class FetchResult:
     status: str                  # ok / partial / failed / empty
     items: list[FetchItem] = field(default_factory=list)
     coverage: dict = field(default_factory=dict)
-    warnings: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)   # 影响完整性的质量警告
+    notices: list[str] = field(default_factory=list)    # 说明性信息（正常截取、语言选择），不降级状态
     error: str | None = None     # 证券级失败的稳定错误码
     display_name: str | None = None
 

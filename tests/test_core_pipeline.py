@@ -146,15 +146,12 @@ class TestFetchPipeline:
             service2.close()
 
     def test_owner_lock_second_writer_rejected(self, tmp_path):
-        service, store = _service(tmp_path)
+        service, store = _service(tmp_path)      # Store 构造即持锁（T1）
         try:
-            store.acquire_owner_lock()
-            rival = Store(tmp_path / "archive")
             with pytest.raises(ReportsFetcherError) as ei:
-                rival.acquire_owner_lock()
+                Store(tmp_path / "archive")      # 第二实例构造即拒绝
             assert ei.value.code == "store_in_use"
         finally:
             service.close()  # 释放锁
         fresh = Store(tmp_path / "archive")
-        fresh.acquire_owner_lock()
         fresh.close()

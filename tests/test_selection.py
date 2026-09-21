@@ -79,6 +79,19 @@ class TestVersionSelection:
         # 仅有修订通知时仍可选择原全文，但必须警告未合并修订（DESIGN §5）
         assert any("未合并" in w for w in result.warnings)
 
+    def test_unverified_amendment_keeps_original(self):
+        """PHASE1_REVIEW T4：无完整性证据的修订（role=unknown）不替代原全文。"""
+        full = make_report(doc_type="10-K", report_period="2025-09-27",
+                           source_id="acc/base.htm", filing_date="2025-10-31")
+        amend = make_report(doc_type="10-K", report_period="2025-09-27",
+                            source_id="acc/amend.htm", filing_date="2025-12-15",
+                            source_form="10-K/A", is_amendment=True,
+                            document_role=DocumentRole.UNKNOWN)
+        result = select_reports([full, amend], _query())
+        assert result.selected_count == 1
+        assert result.selected[0].source_id == "acc/base.htm"
+        assert any("未合并" in w for w in result.warnings)
+
     def test_summary_never_selected_over_full(self):
         summary = make_report(report_period="2026-06-27",
                               source_id="s/summary.htm", filing_date="2026-08-01",
@@ -117,7 +130,9 @@ class TestOrdering:
         assert result.selected_count == 2
         assert [r.source_id for r in result.selected] == ["5.htm", "4.htm"]
         assert result.total_groups == 6
-        assert any("截断" in w for w in result.warnings)
+        # 正常截取是说明性信息（PHASE1_REVIEW T6），不进质量警告
+        assert any("截断" in n for n in result.notices)
+        assert not any("截断" in w for w in result.warnings)
 
 
 class TestFormsFilter:
@@ -142,7 +157,9 @@ class TestLanguage:
         result = select_reports([en, zh], _query(),
                                 language_preference=["zh", "en"])
         assert result.selected[0].language == "zh"
-        assert any("多语言" in w for w in result.warnings)
+        # 偏好语言可用时的正常选择：说明性信息（PHASE1_REVIEW T6）
+        assert any("多语言" in n for n in result.notices)
+        assert not any("多语言" in w for w in result.warnings)
 
     def test_language_fallback_keeps_only_full(self):
         en = make_report(report_period="2026-06-27", source_id="en.htm",

@@ -109,13 +109,42 @@ def create_app(config: Config, job_service: JobService,
     app = FastAPI(
         title="reports-fetcher",
         version=__version__,
-        docs_url="/docs",
-        openapi_url="/openapi.json",
+        # PHASE1_REVIEW T7：框架自动文档路由不受全局 dependencies 保护；
+        # 令牌模式下禁用默认路由，改为下方显式注册的受保护版本。
+        # redoc 在令牌模式下直接关闭（说明性入口，访问 /docs 即可）。
+        docs_url="/docs" if not tokens else None,
+        redoc_url="/redoc" if not tokens else None,
+        openapi_url="/openapi.json" if not tokens else None,
         dependencies=[Depends(auth)] if tokens else None,
     )
     app.state.config = config
     app.state.jobs = job_service
     app.state.tokens = tokens or {}
+
+    if tokens:
+        from fastapi.openapi.utils import get_openapi as build_openapi
+        from fastapi.responses import HTMLResponse
+
+        # fastapi 0.141 无 fastapi.docs 模块：内联等价的 Swagger UI 入口
+        swagger_html = (
+            "<!doctype html><html><head><meta charset='utf-8'>"
+            "<title>reports-fetcher docs</title>"
+            "<link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/"
+            "swagger-ui-dist@5/swagger-ui.css'></head>"
+            "<body><div id='swagger-ui'></div>"
+            "<script src='https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/"
+            "swagger-ui-bundle.js'></script>"
+            "<script>SwaggerUIBundle({url:'/openapi.json',"
+            "dom_id:'#swagger-ui'});</script></body></html>")
+
+        @app.get("/openapi.json", include_in_schema=False)
+        def protected_openapi():
+            return build_openapi(title=app.title, version=app.version,
+                                 routes=app.routes)
+
+        @app.get("/docs", include_in_schema=False)
+        def protected_docs():
+            return HTMLResponse(swagger_html)
 
     # ------------------------------------------------------------ 中间件
 
@@ -501,12 +530,13 @@ def _is_loopback(host: str) -> bool:
 
 
 def _open_locked_store(config: Config):
-    """serve 独占归档根目录所有者锁（DESIGN §11.4：serve 与 CLI 互斥）。"""
+    """serve 独占归档根目录所有者锁（DESIGN §11.4：serve 与 CLI 互斥）。
+
+    Store 构造即持锁（PHASE1_REVIEW T1：schema/恢复在锁内）。
+    """
     from reports_fetcher.store import Store
 
-    store = Store(Path(config.general.out_dir), layout=config.general.layout)
-    store.acquire_owner_lock()
-    return store
+    return Store(Path(config.general.out_dir), layout=config.general.layout)
 
 
 def load_tokens_from_env() -> dict[str, str] | None:

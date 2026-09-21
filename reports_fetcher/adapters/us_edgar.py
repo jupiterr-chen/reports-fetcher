@@ -301,12 +301,20 @@ class USEdgarAdapter(BaseMarketAdapter):
             period_source=(PeriodSource.SOURCE_FIELD
                            if report_period else PeriodSource.UNKNOWN),
             language="en",
-            document_role=(DocumentRole.AMENDMENT_FULL if is_amendment
+            # PHASE1_REVIEW T4：/A 元数据不能证明修订主文档完整重发三张
+            # 报表；无正文/来源完整性证据时不标 amendment_full、不作为
+            # 可选全文。保留 source_form/is_amendment/revision_of 关系，
+            # 同组存在原全文时选择原全文并警告未合并。
+            document_role=(DocumentRole.UNKNOWN if is_amendment
                            else DocumentRole.FULL_REPORT),
             is_amendment=is_amendment,
             source_issuer_id=symbol.source_issuer_id,
             source_metadata=metadata,
         ))
+        if is_amendment:
+            result.warnings.append(
+                f"修订申报（{form}）未确认全文重发，不作为可选全文"
+                f"（保留版本关系）: {source_id}")
 
     @staticmethod
     def _link_amendments(candidates: list[Report]) -> None:
