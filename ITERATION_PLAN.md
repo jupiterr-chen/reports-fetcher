@@ -119,6 +119,8 @@ I2 与 I3 相互独立、均只依赖 I1，可按顺序做也可并行做（单�
 
 ### I5 HTTP 服务与持久化任务
 
+> **状态：✅ 已完成（2026-09-21，v0.5.0）**。DoD 全项核对：① HTTP_API §8 验收场景通过——e2e（compose serve + curl）：提交 202/Location → 轮询至终态 → reports 过滤/游标分页 → 按 ID 下载（ETag=sha256、304、nosniff、attachment 含 filename* UTF-8、checksum 实测一致）；幂等重放未终态 202/终态 200、同键异参 409、无鉴权 401(WWW-Authenticate)/错凭据 403、队列上限 429+Retry-After、未知字段/非法参数/非法代码格式 422、非 JSON 415、无效游标 400、跨报告 artifact 404、文件损坏 409 file_not_available——均单测覆盖（306 个全绿，新增 48）；② CLI 与 HTTP 一致性：单测（同 request 选出相同 report_ids）+ e2e（任务 cached 项与 CLI 归档逐项一致）；③ 重启不丢任务、不重复执行：单测 + e2e 精准 kill（现场 running/attempt=1 → 恢复 attempt=2 → 3 证券 12 项无重复完成）；④ 慢下载期间健康检查/任务查询不被阻塞：单测（1.5s/文件慢响应下查询 <1s）。实现注记：serve 持归档根目录所有者锁，CLI 并发写明确报 store_in_use（实测）；本地无鉴权模式需回环监听或显式 RF_LOCAL_MODE=1（compose 端口仅发布 127.0.0.1）；jobs 三表经 schema v1→v2 增量迁移引入（v1 库自动升级，非重建）；OpenAPI/docs 令牌模式下受保护。
+
 - **范围内**：`api.py / api_models.py / jobs.py`；FastAPI 路由、鉴权（回环 local / 令牌）、Problem Details、OpenAPI；JobService（幂等键 + request_hash、落库后 202、单执行器、队列上限、deadline/attempt、重启恢复 running→queued）；档案查询与按 ID 下载（路径边界、ETag/304、nosniff）；`serve` 命令；jobs 系列表经 schema_version 升级引入；Dockerfile server 目标与 compose serve 服务（端口仅发布到宿主 127.0.0.1）。
 - **DoD**：
   1. [HTTP_API.md](HTTP_API.md) §8 全部验收场景通过；

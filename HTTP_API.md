@@ -1,6 +1,6 @@
-# 一期 HTTP 服务契约草案
+# 一期 HTTP 服务契约
 
-日期：2026-09-20。状态：设计建议，尚未实现；落地迭代为 I5（见 [ITERATION_PLAN.md](./ITERATION_PLAN.md)，需求基线 [REQUIREMENTS.md](./REQUIREMENTS.md)）。上游：[ARCHITECTURE.md](./ARCHITECTURE.md)；内部设计：[DESIGN.md](./DESIGN.md)。
+日期：2026-09-20；**I5 已实现（2026-09-21，v0.5.0）**，验收记录见 [ITERATION_PLAN.md](./ITERATION_PLAN.md) I5 状态；需求基线 [REQUIREMENTS.md](./REQUIREMENTS.md)。上游：[ARCHITECTURE.md](./ARCHITECTURE.md)；内部设计：[DESIGN.md](./DESIGN.md)。实现注记：本地无鉴权模式适用于回环监听或部署侧显式声明端口仅发布回环（环境变量 `RF_LOCAL_MODE=1`，compose serve 默认）；令牌经环境变量 `RF_API_TOKENS=client:token,…` 注入。
 
 ## 1. 交付范围与运行方式
 

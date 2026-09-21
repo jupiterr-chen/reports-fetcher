@@ -57,14 +57,27 @@ services:
       - ./config.toml:/app/config.toml:ro
     entrypoint: ["python", "-m", "reports_fetcher"]
 
-  # I5 起启用：HTTP 服务（仅发布到宿主 127.0.0.1）
-  # serve:
-  #   build:
-  #     context: .
-  #     target: server
-  #   ports:
-  #     - "127.0.0.1:8000:8000"
-  #   volumes:
-  #     - ./reports:/app/reports
-  #     - ./config.toml:/app/config.toml:ro
-  #   restart: unless-stopped
+  # HTTP 服务（I5 起）：端口仅发布到宿主 127.0.0.1；归档目录/配置经挂载；
+  # 令牌经环境变量注入（RF_API_TOKENS=client:token,…），未配置且非回环拒绝启动
+  serve:
+    build:
+      context: .
+      target: server
+      args:
+        BASE_IMAGE: ${BASE_IMAGE:-python:3.12-slim}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+    profiles: ["tools"]
+    environment:
+      SEC_UA_EMAIL: ${SEC_UA_EMAIL:-}
+      RF_API_TOKENS: ${RF_API_TOKENS:-}
+      # 端口仅发布到宿主 127.0.0.1（见 ports），故默认允许本地无鉴权模式；
+      # 若改为对外发布，必须删除本行并配置 RF_API_TOKENS
+      RF_LOCAL_MODE: ${RF_LOCAL_MODE:-1}
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./reports:/app/reports
+      - ./config.toml:/app/config.toml:ro
+    restart: unless-stopped
+    # ENTRYPOINT 已含 "serve"，此处仅附加参数
+    command: ["--host", "0.0.0.0", "--port", "8000"]

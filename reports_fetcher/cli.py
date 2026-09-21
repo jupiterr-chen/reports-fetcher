@@ -70,6 +70,12 @@ def build_parser() -> argparse.ArgumentParser:
     list_p.add_argument("--last", type=int, default=None, metavar="N")
     list_p.add_argument("--forms", default=None, metavar="A,B")
 
+    serve_p = sub.add_parser("serve", parents=[common],
+                             help="启动 HTTP 服务（I5；仅单个 Uvicorn worker）")
+    serve_p.add_argument("--host", default=None, metavar="ADDR",
+                         help="监听地址（默认取配置；非回环必须配置令牌）")
+    serve_p.add_argument("--port", type=int, default=None, metavar="PORT")
+
     sub.add_parser("version", parents=[common], help="输出版本号")
     return parser
 
@@ -220,6 +226,16 @@ def main(argv: list[str] | None = None) -> int:
         _setup_logging(config, args.verbose)
         if args.command == "version":
             print(f"reports-fetcher {__version__}")
+            return 0
+        if args.command == "serve":
+            # server 安装组（FastAPI/Uvicorn）按需导入，CLI 基础安装不含
+            from reports_fetcher.api import load_tokens_from_env, start_server
+
+            if args.host is not None:
+                config.server.host = args.host
+            if args.port is not None:
+                config.server.port = args.port
+            start_server(config, load_tokens_from_env())
             return 0
         service = FetchService.from_config(config)
         try:

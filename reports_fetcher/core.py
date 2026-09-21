@@ -4,10 +4,14 @@
 校验缓存/下载（有界并行）→ Store 归档 → 汇总。
 
 失败隔离（FR-6）：单文件失败继续该证券其他文件；单证券失败继续整批。
+CLI 用单市场 forms；HTTP 任务用 forms_by_market（HTTP_API §3）。
+deadline_ts（单调时钟）供任务执行时限：超时后剩余证券不再触网、
+待下载项直接标 job_deadline_exceeded（HTTP_API §4）。
 """
 from __future__ import annotations
 
 import logging
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -83,7 +87,9 @@ class FetchService:
 
     def fetch(self, raw_symbols: list[str], *, last_n: int | None = None,
               forms: list[str] | None = None,
-              refresh: bool = False) -> BatchResult:
+              forms_by_market: dict[str, list[str]] | None = None,
+              refresh: bool = False,
+              deadline_ts: float | None = None) -> BatchResult:
         """抓取并归档。refresh=True 时重下候选并保留旧内容版本（多 artifact
         并存、按 ID 读取，DESIGN §12）；默认仅跳过已有。"""
         ordered, _aliases, invalid = batch_normalize(raw_symbols)
@@ -105,7 +111,14 @@ class FetchService:
         )
         pending: list[_DownloadTask] = []
         for norm in ordered:
-            result, selection = self._discover(norm, query_base, forms)
+            if deadline_ts is not None and time.monotonic() > deadline_ts:
+                batch.results.append(FetchResult(
+                    market=norm.market, symbol=norm.symbol,
+                    status="failed", error="job_deadline_exceeded"))
+                continue
+            market_forms = (forms_by_market.get(norm.market.value)
+                            if forms_by_market is not None else forms)
+            result, selection = self._discover(norm, query_base, market_forms)
             batch.results.append(result)
             for report in selection.selected:
                 item = self._prepare_archive(report, result, refresh=refresh)
@@ -116,6 +129,19 @@ class FetchService:
                     result=result, item=item, report=report,
                     group=adapter.source_group,
                     headers=adapter.download_headers(report)))
+
+        if deadline_ts is not None and time.monotonic() > deadline_ts:
+            for task in pending:
+                task.item.outcome = OUTCOME_FAILED
+                task.item.error = "job_deadline_exceeded"
+                try:
+                    self.store.register_download(task.item.report_id)
+                    self.store.mark_failed(task.item.report_id,
+                                           "job_deadline_exceeded",
+                                           "任务执行时限已到，未下载")
+                except StoreError:  # pragma: no cover
+                    pass
+            pending = []
 
         workers = max(1, min(self.config.fetch.market_workers, 3))
         if pending:
@@ -132,8 +158,9 @@ class FetchService:
     # ------------------------------------------------------------ list 预览
 
     def preview(self, raw_symbols: list[str], *, last_n: int | None = None,
-                forms: list[str] | None = None) -> tuple[list[SymbolPreview],
-                                                         list[tuple[str, SymbolError]]]:
+                forms: list[str] | None = None,
+                forms_by_market: dict[str, list[str]] | None = None
+                ) -> tuple[list[SymbolPreview], list[tuple[str, SymbolError]]]:
         """联网预览元数据与覆盖信息，不下载原文；会更新 symbol_map（缓存副作用）。"""
         ordered, _aliases, invalid = batch_normalize(raw_symbols)
         markets = {norm.market for norm in ordered}
@@ -148,7 +175,9 @@ class FetchService:
         )
         previews: list[SymbolPreview] = []
         for norm in ordered:
-            previews.append(self._preview_symbol(norm, query_base, forms))
+            market_forms = (forms_by_market.get(norm.market.value)
+                            if forms_by_market is not None else forms)
+            previews.append(self._preview_symbol(norm, query_base, market_forms))
         return previews, invalid
 
     def _preview_symbol(self, norm: NormalizedSymbol, query_base: dict,

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "reports-fetcher"
-version = "0.4.0"
+version = "0.5.0"
 description = "A股/港股/美股定期财报原文获取与归档（CLI，Docker 主力运行方式）"
 requires-python = ">=3.11"
 dependencies = [
@@ -14,6 +14,12 @@ dependencies = [
 [project.optional-dependencies]
 test = [
     "pytest>=8,<9",
+    "httpx>=0.27,<1",
+    "fastapi>=0.115,<1",  # 仅用于 API 层测试（核心运行时依赖仍只有 requests）
+]
+server = [
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.30,<1",
 ]
 
 [tool.setuptools]

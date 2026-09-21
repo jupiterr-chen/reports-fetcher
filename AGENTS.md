@@ -4,10 +4,10 @@
 
 ## 当前状态（2026-09-21）
 
-- I0 `d3575b3`；I1 US（v0.1.0，`16659f7`）；I2 CN（v0.2.0，`181f2bb`）；I3 HK（v0.3.0，`41a6822`）——三市场 CLI 归档可用。
-- **I4 已完成（v0.4.0）**：可靠性硬化——归档根目录 flock 单写者锁（`store_in_use`）、`--refresh` 多版本保留、丢失/损坏修复、全部中断场景测试。批量 30 只长跑 0 脏状态。
-- **下一步：I5（HTTP 服务与持久化任务）**：FastAPI + JobService + 按 HTTP_API.md 验收。范围与 DoD 以 [ITERATION_PLAN.md](ITERATION_PLAN.md) 为准。
-- 实际使用：`SEC_UA_EMAIL=<邮箱> docker compose run --rm cli fetch AAPL 600519 0700.HK --last 4`；`--refresh` 重下并保留旧版本；QTR-HK 需显式 `--forms QTR-HK`。
+- I0 `d3575b3`；I1 US（v0.1.0）；I2 CN（v0.2.0）；I3 HK（v0.3.0）——三市场 CLI 归档可用；I4 可靠性硬化（v0.4.0）。
+- **I5 已完成（v0.5.0）**：HTTP 服务与持久化任务——`docker compose up -d serve`（127.0.0.1:8000，本地无鉴权模式默认开），POST /api/v1/fetch-jobs（Idempotency-Key）→ 轮询 → /api/v1/reports → 按 ID 下载；serve 持锁期间 CLI 写操作报 store_in_use。
+- **下一步：I6（一期验收与发布）**：三市场集成冒烟矩阵、README/调用示例、性能基线、文档一致性核对、tag v1.0.0。
+- CLI 使用：`SEC_UA_EMAIL=<邮箱> docker compose run --rm cli fetch AAPL 600519 0700.HK --last 4`；`--refresh` 重下并保留旧版本。
 
 ## 文档地图（动手前先读）
 

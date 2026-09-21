@@ -39,15 +39,25 @@ class FetchConfig:
 
 
 @dataclass
+class GeneralConfig:
+    out_dir: str = "./reports"
+    layout: str = "flat"
+
+
+@dataclass
 class LogConfig:
     level: str = "INFO"
     file: str = ""
 
 
 @dataclass
-class GeneralConfig:
-    out_dir: str = "./reports"
-    layout: str = "flat"
+class ServerConfig:
+    host: str = "127.0.0.1"
+    port: int = 8000
+    max_pending_jobs: int = 100
+    job_deadline_seconds: int = 1800
+    max_job_attempts: int = 3
+    max_symbols_per_job: int = 50
 
 
 @dataclass
@@ -55,6 +65,7 @@ class Config:
     general: GeneralConfig = field(default_factory=GeneralConfig)
     http: HttpConfig = field(default_factory=HttpConfig)
     fetch: FetchConfig = field(default_factory=FetchConfig)
+    server: ServerConfig = field(default_factory=ServerConfig)
     log: LogConfig = field(default_factory=LogConfig)
 
 
@@ -101,6 +112,17 @@ def _coerce(data: dict) -> Config:
         lg = data.get("log", {})
         cfg.log.level = str(lg.get("level", cfg.log.level)).upper()
         cfg.log.file = str(lg.get("file", cfg.log.file))
+        sv = data.get("server", {})
+        cfg.server.host = str(sv.get("host", cfg.server.host))
+        cfg.server.port = int(sv.get("port", cfg.server.port))
+        cfg.server.max_pending_jobs = int(
+            sv.get("max_pending_jobs", cfg.server.max_pending_jobs))
+        cfg.server.job_deadline_seconds = int(
+            sv.get("job_deadline_seconds", cfg.server.job_deadline_seconds))
+        cfg.server.max_job_attempts = int(
+            sv.get("max_job_attempts", cfg.server.max_job_attempts))
+        cfg.server.max_symbols_per_job = int(
+            sv.get("max_symbols_per_job", cfg.server.max_symbols_per_job))
         return cfg
     except (TypeError, ValueError) as e:
         raise ConfigError(f"配置字段类型不合法: {e}") from e
@@ -135,6 +157,16 @@ def _validate(cfg: Config) -> None:
                               detail=f"group={group}")
     if cfg.log.level not in ("DEBUG", "INFO", "WARNING", "ERROR"):
         raise ConfigError("log.level 仅支持 DEBUG/INFO/WARNING/ERROR")
+    if not (1 <= cfg.server.max_pending_jobs <= 10000):
+        raise ConfigError("server.max_pending_jobs 范围为 1-10000")
+    if cfg.server.job_deadline_seconds <= 0:
+        raise ConfigError("server.job_deadline_seconds 必须为正")
+    if not (1 <= cfg.server.max_job_attempts <= 10):
+        raise ConfigError("server.max_job_attempts 范围为 1-10")
+    if not (1 <= cfg.server.max_symbols_per_job <= 50):
+        raise ConfigError("server.max_symbols_per_job 范围为 1-50（HTTP_API §3）")
+    if not (1 <= cfg.server.port <= 65535):
+        raise ConfigError("server.port 范围为 1-65535")
     for market, forms in cfg.fetch.default_forms.items():
         if market not in ("CN", "HK", "US"):
             raise ConfigError("fetch.default_forms 键仅支持 CN/HK/US",

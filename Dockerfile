@@ -40,8 +40,11 @@ WORKDIR /app
 ENTRYPOINT []
 CMD ["python", "-m", "pytest", "tests", "-q"]
 
-# ---- server：HTTP 服务（I5 起启用，server 安装组） ----
-# FROM runtime AS server
-# RUN pip install --no-cache-dir ".[server]"
-# EXPOSE 8000
-# ENTRYPOINT ["python", "-m", "reports_fetcher", "serve"]
+# ---- server：HTTP 服务（I5；server 安装组，仅发布到宿主 127.0.0.1） ----
+FROM base AS server
+ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+COPY pyproject.toml /app/pyproject.toml
+COPY reports_fetcher /app/reports_fetcher
+RUN pip install --index-url "$PIP_INDEX_URL" --no-cache-dir ".[server]"
+EXPOSE 8000
+ENTRYPOINT ["python", "-m", "reports_fetcher", "serve"]

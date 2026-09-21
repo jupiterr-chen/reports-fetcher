@@ -40,17 +40,36 @@ def _commit(store: Store, report=None, content: bytes | None = None):
 
 
 class TestSchema:
-    def test_schema_v1_created_with_wal(self, tmp_path):
+    def test_schema_v2_created_with_wal(self, tmp_path):
         store = Store(tmp_path / "archive")
         mode = store.connection().execute("PRAGMA journal_mode").fetchone()[0]
         assert mode == "wal"
         tables = {r["name"] for r in store.connection().execute(
             "SELECT name FROM sqlite_master WHERE type='table'")}
         assert {"schema_meta", "manifest", "artifacts", "archive_intents",
-                "symbol_map"} <= tables
+                "symbol_map", "jobs", "job_symbols", "job_items"} <= tables
         version = store.connection().execute(
             "SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()
-        assert version["value"] == "1"
+        assert version["value"] == "2"
+
+    def test_v1_database_upgraded_additively(self, tmp_path):
+        root = tmp_path / "archive"
+        store = Store(root)
+        store.close()
+        conn = sqlite3.connect(root / "archive.sqlite3")
+        conn.execute("UPDATE schema_meta SET value='1' WHERE key='schema_version'")
+        conn.execute("DROP TABLE jobs")
+        conn.execute("DROP TABLE job_symbols")
+        conn.execute("DROP TABLE job_items")
+        conn.commit()
+        conn.close()
+        store2 = Store(root)  # v1 → v2 增量迁移（非重建）
+        version = store2.connection().execute(
+            "SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()
+        assert version["value"] == "2"
+        tables = {r["name"] for r in store2.connection().execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        assert {"jobs", "job_symbols", "job_items"} <= tables
 
     def test_incompatible_version_rejected(self, tmp_path):
         root = tmp_path / "archive"

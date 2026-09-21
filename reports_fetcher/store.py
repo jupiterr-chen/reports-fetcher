@@ -35,7 +35,7 @@ from reports_fetcher.models import (
 )
 from reports_fetcher.period import period_or_unknown
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # v2 = v1 + jobs/job_symbols/job_items（I5，增量迁移）
 
 _LAYOUTS = ("flat", "nested")
 _MAX_TITLE_LEN = 60
@@ -121,6 +121,53 @@ CREATE TABLE IF NOT EXISTS symbol_map (
     updated_at        TEXT NOT NULL,
     expires_at        TEXT,
     PRIMARY KEY (market, symbol)
+);
+
+-- ---- schema v2（I5）：持久化任务 ----
+CREATE TABLE IF NOT EXISTS jobs (
+    job_id                TEXT PRIMARY KEY,
+    client_id             TEXT NOT NULL,
+    idempotency_key       TEXT NOT NULL,
+    request_hash          TEXT NOT NULL,
+    effective_request_json TEXT NOT NULL,
+    status                TEXT NOT NULL
+                          CHECK (status IN ('queued','running',
+                                            'succeeded','partial','failed')),
+    attempt               INTEGER NOT NULL DEFAULT 0,
+    deadline              TEXT,
+    started_at            TEXT,
+    submitted_at          TEXT NOT NULL,
+    finished_at           TEXT,
+    summary_json          TEXT,
+    created_at            TEXT NOT NULL,
+    updated_at            TEXT NOT NULL,
+    UNIQUE (client_id, idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+
+CREATE TABLE IF NOT EXISTS job_symbols (
+    job_id          TEXT NOT NULL REFERENCES jobs(job_id),
+    market          TEXT NOT NULL,
+    symbol          TEXT NOT NULL,
+    status          TEXT NOT NULL
+                    CHECK (status IN ('succeeded','partial','failed','no_reports')),
+    coverage_json   TEXT,
+    warnings_json   TEXT,
+    error_code      TEXT,
+    display_name    TEXT,
+    PRIMARY KEY (job_id, market, symbol)
+);
+
+CREATE TABLE IF NOT EXISTS job_items (
+    job_id       TEXT NOT NULL,
+    report_id    TEXT NOT NULL,
+    source_id    TEXT NOT NULL,
+    outcome      TEXT NOT NULL
+                 CHECK (outcome IN ('downloaded','cached','failed')),
+    artifact_id  TEXT,
+    error_code   TEXT,
+    error_detail TEXT,
+    PRIMARY KEY (job_id, report_id)
 );
 """
 
@@ -268,6 +315,7 @@ class Store:
     def _init_schema(self) -> None:
         conn = self.connection()
         with conn:
+            # DDL 全部 IF NOT EXISTS：v1 库增量获得 v2 任务表（非重建）
             conn.executescript(_SCHEMA_SQL)
             row = conn.execute(
                 "SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()
@@ -275,11 +323,18 @@ class Store:
                 conn.execute(
                     "INSERT INTO schema_meta(key, value) VALUES('schema_version', ?)",
                     (str(SCHEMA_VERSION),))
-            elif row["value"] != str(SCHEMA_VERSION):
+            elif row["value"] == str(SCHEMA_VERSION):
+                pass
+            elif row["value"] == "1":
+                # v1 → v2：jobs 三表已由上方 DDL 增量创建，仅推进版本号
+                conn.execute(
+                    "UPDATE schema_meta SET value=? WHERE key='schema_version'",
+                    (str(SCHEMA_VERSION),))
+            else:
                 raise StoreError(
                     "数据库 schema_version 不兼容，拒绝静默重建",
                     detail=f"db={self.db_path} version={row['value']} "
-                           f"expected={SCHEMA_VERSION}")
+                           f"expected<={SCHEMA_VERSION}")
 
     # ------------------------------------------------------------- 恢复
 

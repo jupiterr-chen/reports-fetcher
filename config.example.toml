@@ -33,6 +33,14 @@ CN = ["Q1", "H1", "Q3", "FY"]
 HK = ["ANNUAL", "INTERIM"]
 US = ["10-Q", "10-K", "20-F"]
 
+[server]
+host = "127.0.0.1"            # 容器内监听 0.0.0.0，宿主仅发布 127.0.0.1
+port = 8000
+max_pending_jobs = 100        # queued/running 上限，超出 429
+job_deadline_seconds = 1800   # 单任务执行时限（排队时间不计）
+max_job_attempts = 3          # 含中断恢复
+max_symbols_per_job = 50
+
 [log]
 level = "INFO"
 file = ""                      # 留空仅输出到控制台
