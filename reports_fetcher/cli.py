@@ -60,6 +60,8 @@ def build_parser() -> argparse.ArgumentParser:
                          help="归档布局（默认取配置）")
     fetch_p.add_argument("--market-workers", type=int, default=None, metavar="N",
                          help="下载并行度 1-3（不提升同源限速预算）")
+    fetch_p.add_argument("--refresh", action="store_true",
+                         help="重下候选并保留旧内容版本（默认跳过已有）")
 
     list_p = sub.add_parser("list", parents=[common],
                             help="联网预览元数据与覆盖信息（不下载原文）")
@@ -134,7 +136,8 @@ def _print_warnings(warnings: list[str]) -> None:
 def _cmd_fetch(service: FetchService, args: argparse.Namespace) -> int:
     symbols = _read_symbols(args)
     batch: BatchResult = service.fetch(
-        symbols, last_n=args.last, forms=_parse_forms(args.forms))
+        symbols, last_n=args.last, forms=_parse_forms(args.forms),
+        refresh=bool(getattr(args, "refresh", False)))
     for raw, error in batch.invalid:
         print(f"[invalid_symbol] {raw}: {error}")
     for result in batch.results:
@@ -148,7 +151,8 @@ def _cmd_fetch(service: FetchService, args: argparse.Namespace) -> int:
             if item.outcome == OUTCOME_FAILED:
                 print(f"  [{label}] {item.source_id}: {item.error} {item.detail or ''}")
             else:
-                print(f"  [{label}] {item.source_id} -> {item.local_path}")
+                note = f"（{item.detail}）" if item.detail else ""
+                print(f"  [{label}] {item.source_id}{note} -> {item.local_path}")
         if result.status == "empty":
             print(f"  无匹配报告（no_reports）：{result.error}")
         if result.status == "failed":
@@ -219,6 +223,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         service = FetchService.from_config(config)
         try:
+            if args.command in ("fetch", "list"):
+                # 归档根目录单写者锁（list 也写 symbol_map，DESIGN §11.4/§12）
+                service.store.acquire_owner_lock()
             if args.command == "fetch":
                 return _cmd_fetch(service, args)
             if args.command == "list":

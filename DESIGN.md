@@ -121,7 +121,7 @@ class BaseMarketAdapter:
 
 | 步骤 | 已验证请求与关键字段 |
 |---|---|
-| resolve | GET `https://www1.hkexnews.hk/search/prefix.do?callback=callback&lang=ZH&type=A&name=00700&market=SEHK`；JSONP 剥壳（只剥已知包装，绝不 eval）；返回**五位 code**（如 `00016`）与 `stockId`，按 code 精确匹配；不存在代码返回空 `stockInfo`（fixture 留证） |
+| resolve | GET `https://www1.hkexnews.hk/search/prefix.do?callback=callback&lang=ZH&type=A&name=00700&market=SEHK`；JSONP 剥壳（只剥已知包装，绝不 eval）；返回**五位 code**（如 `00016`）与 `stockId`，按 code 精确匹配；不存在代码返回空 `stockInfo`（fixture 留证）。**I4 实测补充（2026-09-21）**：prefix.do 为去零前缀式搜索——返回非空但无精确命中也按 symbol_not_found 处理（00011 在 type=A 索引缺席为真实样本，fixture `prefix_search_variants.json` 留证），不得取前缀近似命中 |
 | list | GET `https://www1.hkexnews.hk/search/titlesearch.xhtml`，参数：`lang=ZH&category=0&market=SEHK&searchType=1&documentType=-1&t1code=40000&t2Gcode=-2&t2code=-2&stockId=<内部ID>&title=<可空>&from=YYYYMMDD&to=YYYYMMDD`。**有效日期参数是 from/to；fromDate/toDate 会被忽略**（参数矩阵实测） |
 | 文件 | `file_link` 形如 `/listedco/listconews/sehk/2026/0825/2026082500557_c.pdf`，与官方基址 URL join（`_c`=中文版）；source_id 为规范化文件路径 |
 

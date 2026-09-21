@@ -107,6 +107,8 @@ I2 与 I3 相互独立、均只依赖 I1，可按顺序做也可并行做（单�
 
 ### I4 可靠性硬化
 
+> **状态：✅ 已完成（2026-09-21，v0.4.0）**。DoD 全项核对：① DESIGN §11.3/§11.4 中断场景测试齐备——下载中崩溃（I1 起有，I4 复核）、改名后崩溃（I1 起）、标记后崩溃（幂等重开测试）、文件被删（修复复用原 artifact ID）、文件损坏（检出 unavailable → 已校验临时文件覆盖修复）、ready 被外部篡改（拒绝覆盖）；② `--refresh` 落地：内容变化 → 新 artifact + 旧版本保留并按 ID 可读（checksum 一致，单测 + 离线集成测试）；内容未变 → 复用既有版本不重复归档（真网验证）；refresh 期间 manifest 保持 done、失败不降级已有有效内容；③ 批量长跑 30 只混合三市场：29 只归档（116 项）+ 1 只干净 `symbol_not_found`（00011 在 prefix.do 索引缺席，I4 实测留证 fixture），全程 0 失败，事后核验 118 artifacts **0 不一致 / 0 在途 intent / 0 unavailable / 0 downloading 残留 / 0 重复 source_id / 0 半文件**；④ 进程锁：归档根目录 flock 单写者（跨容器互斥已在主力环境实测，进程死亡自动释放），第二个写实例明确报 `store_in_use` 退出码 2（真容器并发验证）。实现注记：flock 跨容器互斥为 I4 实测结论（Windows Docker Desktop bind mount）；resolve 始终联网精确校验、不读缓存映射（symbol_map 仅记录，7 天过期字段写入），故无过期读路径。单测 258 个全绿（新增 14 个：恢复协议补测/锁/refresh/修复 + core 离线全链路集成）。
+
 - **范围内**：archive_intents 完整恢复协议（DESIGN §11.3 各中断点的核对与收敛）；`--refresh` 与旧版本保留（多 artifact 并存、按 ID 读取）；丢失/损坏文件修复（unavailable → 恢复复用原 artifact）；symbol_map 过期与失效刷新；归档根目录进程锁（单实例写保护，为 I5 的 serve 复用）；日志完善（report/job 关联、候选排除理由）。
 - **DoD**：
   1. DESIGN §11.3/§11.4 列出的每个中断场景有对应测试（下载后崩溃、改名后崩溃、标记后崩溃、文件被删、文件损坏）；

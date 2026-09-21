@@ -400,3 +400,165 @@ class TestSymbolMap:
         assert row["source_issuer_id"] == "0000320193"
         assert row["display_name"] == "Apple Inc."
         assert row["expires_at"] is not None
+
+
+class TestOwnerLock:
+    """进程级所有者锁（DESIGN §11.4，DoD #4）：第二个写实例报 store_in_use。"""
+
+    def test_second_store_on_same_root_rejected(self, tmp_path):
+        root = tmp_path / "archive"
+        first = Store(root)
+        first.acquire_owner_lock()
+        second = Store(root)
+        with pytest.raises(StoreError) as ei:
+            second.acquire_owner_lock()
+        assert ei.value.code == "store_in_use"
+        first.close()
+        # 持锁进程退出/关闭后自动释放，重跑不被阻塞
+        third = Store(root)
+        third.acquire_owner_lock()
+        third.close()
+
+    def test_double_acquire_on_same_store_is_noop(self, tmp_path):
+        store = Store(tmp_path / "archive")
+        store.acquire_owner_lock()
+        store.acquire_owner_lock()  # 幂等
+        store.close()
+
+    def test_reopen_after_kill_style_release(self, tmp_path):
+        # 模拟强杀：锁释放（flock 随进程死亡回收）、库不清理，重跑可立即持锁
+        root = tmp_path / "archive"
+        holder = Store(root)
+        holder.acquire_owner_lock()
+        holder.release_owner_lock()
+        fresh = Store(root)
+        fresh.acquire_owner_lock()
+        fresh.close()
+
+
+class TestRefreshVersions:
+    """refresh：重下候选并保留旧内容版本（多 artifact 并存、按 ID 读取）。"""
+
+    def test_refresh_new_content_keeps_old_artifact(self, tmp_path):
+        root = tmp_path / "archive"
+        store = Store(root)
+        report = make_report()
+        ref = store.upsert_report(report)
+        v1 = store.commit_file(ref.report_id, report,
+                               _downloaded(store, b"version-one" * 60),
+                               store.register_download(ref.report_id))
+        # refresh 下载期间：manifest 保持 done（不降级已有有效内容）
+        attempt = store.register_download(ref.report_id)
+        status_during_refresh = store.connection().execute(
+            "SELECT status FROM manifest WHERE report_id=?",
+            (ref.report_id,)).fetchone()["status"]
+        assert status_during_refresh == "done"
+        v2 = store.commit_file(ref.report_id, report,
+                               _downloaded(store, b"version-two" * 60),
+                               attempt)
+        assert v1.artifact_id != v2.artifact_id
+        # 旧 artifact 仍可按 ID 读取且 checksum 一致（DoD #2）
+        path1, row1 = store.open_artifact(v1.artifact_id)
+        assert path1.read_bytes() == b"version-one" * 60
+        assert row1["sha256"] == hashlib.sha256(b"version-one" * 60).hexdigest()
+        assert row1["state"] == "ready"
+        # 当前版本切换为新内容
+        cached = store.find_cached(ref.report_id)
+        assert cached.artifact_id == v2.artifact_id
+        n = store.connection().execute(
+            "SELECT COUNT(*) AS n FROM artifacts WHERE report_id=?",
+            (ref.report_id,)).fetchone()["n"]
+        assert n == 2  # 多版本并存
+
+    def test_refresh_identical_content_reuses(self, tmp_path):
+        store = Store(tmp_path / "archive")
+        report = make_report()
+        ref = store.upsert_report(report)
+        content = b"same-bytes" * 80
+        o1 = store.commit_file(ref.report_id, report,
+                               _downloaded(store, content),
+                               store.register_download(ref.report_id))
+        o2 = store.commit_file(ref.report_id, report,
+                               _downloaded(store, content),
+                               store.register_download(ref.report_id))
+        assert o2.reused is True and o2.artifact_id == o1.artifact_id
+        n = store.connection().execute(
+            "SELECT COUNT(*) AS n FROM artifacts WHERE report_id=?",
+            (ref.report_id,)).fetchone()["n"]
+        assert n == 1
+
+    def test_refresh_failure_does_not_degrade_done(self, tmp_path):
+        store = Store(tmp_path / "archive")
+        report = make_report()
+        ref = store.upsert_report(report)
+        store.commit_file(ref.report_id, report,
+                          _downloaded(store, b"good" * 100),
+                          store.register_download(ref.report_id))
+        # refresh 尝试失败：只记任务尝试，已有有效版本不降级
+        store.register_download(ref.report_id)
+        store.mark_failed(ref.report_id, "download_invalid", "refresh failed")
+        row = store.connection().execute(
+            "SELECT status, current_artifact_id FROM manifest WHERE report_id=?",
+            (ref.report_id,)).fetchone()
+        assert row["status"] == "done" and row["current_artifact_id"]
+        assert store.find_cached(ref.report_id) is not None
+
+
+class TestFileLossRepair:
+    """丢失/损坏文件修复（DoD #1：文件被删 / 文件损坏）。"""
+
+    def _committed(self, tmp_path):
+        root = tmp_path / "archive"
+        store = Store(root)
+        report = make_report()
+        ref = store.upsert_report(report)
+        content = b"<html><body>report v1</body></html>" + b"x" * 400
+        outcome = store.commit_file(ref.report_id, report,
+                                    _downloaded(store, content),
+                                    store.register_download(ref.report_id))
+        return store, root, report, ref, content, outcome
+
+    def test_deleted_file_repaired_with_same_artifact_id(self, tmp_path):
+        store, root, report, ref, content, outcome = self._committed(tmp_path)
+        (root / outcome.rel_path).unlink()
+        assert store.find_cached(ref.report_id) is None  # 检出丢失并标记
+        # 修复：重抓同内容 → 复用原 artifact ID（不违反 report+sha 唯一约束）
+        attempt = store.register_download(ref.report_id)
+        outcome2 = store.commit_file(ref.report_id, report,
+                                     _downloaded(store, content), attempt)
+        assert outcome2.artifact_id == outcome.artifact_id
+        assert outcome2.reused is True
+        path, row = store.open_artifact(outcome.artifact_id)
+        assert path.read_bytes() == content and row["state"] == "ready"
+
+    def test_corrupted_file_repaired_by_validated_temp(self, tmp_path):
+        store, root, report, ref, content, outcome = self._committed(tmp_path)
+        (root / outcome.rel_path).write_bytes(b"corrupted junk")
+        assert store.find_cached(ref.report_id) is None  # 检出损坏并标记
+        # 修复：目标现场已被判 unavailable → 以已校验临时文件覆盖
+        attempt = store.register_download(ref.report_id)
+        outcome2 = store.commit_file(ref.report_id, report,
+                                     _downloaded(store, content), attempt)
+        assert outcome2.artifact_id == outcome.artifact_id
+        assert (root / outcome.rel_path).read_bytes() == content
+        assert store.find_cached(ref.report_id) is not None
+
+    def test_tampered_ready_target_refuses_overwrite(self, tmp_path):
+        store, root, report, ref, content, outcome = self._committed(tmp_path)
+        # 现场伪造：ready 目标被外部替换为异样内容，且未经 find_cached 检出
+        # （无 unavailable 判定）→ 同名重下时拒绝覆盖（DESIGN §11.3 步骤 4）
+        (root / outcome.rel_path).write_bytes(b"tampered")
+        with pytest.raises(StoreError, match="拒绝覆盖"):
+            store.commit_file(ref.report_id, report,
+                              _downloaded(store, content),
+                              store.register_download(ref.report_id))
+
+    def test_finalize_idempotent_after_mark_crash(self, tmp_path):
+        """标记后崩溃（DoD #1）：重开/再标记幂等，状态保持一致。"""
+        store, root, report, ref, content, outcome = self._committed(tmp_path)
+        store.close()
+        for _ in range(2):  # 连续重开多次
+            reopened = Store(root)
+            cached = reopened.find_cached(ref.report_id)
+            assert cached is not None
+            reopened.close()

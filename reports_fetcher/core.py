@@ -82,7 +82,10 @@ class FetchService:
     # ------------------------------------------------------------ fetch
 
     def fetch(self, raw_symbols: list[str], *, last_n: int | None = None,
-              forms: list[str] | None = None) -> BatchResult:
+              forms: list[str] | None = None,
+              refresh: bool = False) -> BatchResult:
+        """抓取并归档。refresh=True 时重下候选并保留旧内容版本（多 artifact
+        并存、按 ID 读取，DESIGN §12）；默认仅跳过已有。"""
         ordered, _aliases, invalid = batch_normalize(raw_symbols)
         batch = BatchResult(invalid=invalid)
         if not ordered:
@@ -105,7 +108,7 @@ class FetchService:
             result, selection = self._discover(norm, query_base, forms)
             batch.results.append(result)
             for report in selection.selected:
-                item = self._prepare_archive(report, result)
+                item = self._prepare_archive(report, result, refresh=refresh)
                 if item is None or item.outcome == OUTCOME_CACHED:
                     continue
                 adapter = self.adapter(norm.market)
@@ -263,11 +266,16 @@ class FetchService:
             return adapter.default_forms()
         return forms
 
-    def _prepare_archive(self, report: Report, result: FetchResult) -> FetchItem | None:
-        """upsert 候选报告得到稳定 report_id；缓存命中（sha256 复核）则跳过。"""
+    def _prepare_archive(self, report: Report, result: FetchResult, *,
+                         refresh: bool = False) -> FetchItem | None:
+        """upsert 候选报告得到稳定 report_id；缓存命中（sha256 复核）则跳过。
+
+        refresh 模式不做缓存短路：重下候选，内容变化产生新 artifact、
+        旧版本保留（DESIGN §12）。
+        """
         try:
             ref = self.store.upsert_report(report)
-            cached = self.store.find_cached(ref.report_id)
+            cached = None if refresh else self.store.find_cached(ref.report_id)
         except StoreError as e:
             logger.error("store 写入失败 %s: %s", report.source_id, e)
             result.items.append(FetchItem(
@@ -288,7 +296,8 @@ class FetchService:
     def _run_download(self, task: _DownloadTask) -> None:
         """阶段 2：注册 → 下载（已校验临时文件）→ Store 原子提交。"""
         report = task.report
-        logger.info("开始下载 %s %s", task.result.symbol, report.source_id)
+        logger.info("开始下载 %s %s (report=%s)", task.result.symbol,
+                    report.source_id, task.item.report_id)
         try:
             attempt_id = self.store.register_download(task.item.report_id)
             downloaded = self.transport.download(
@@ -300,6 +309,8 @@ class FetchService:
                                              downloaded, attempt_id)
             task.item.outcome = OUTCOME_DOWNLOADED
             task.item.local_path = str(self.store.root / outcome.rel_path)
+            if outcome.reused:
+                task.item.detail = "内容未变化，复用既有内容版本"
             logger.info("归档完成 %s -> %s%s", report.source_id, outcome.rel_path,
                         "（复用既有内容版本）" if outcome.reused else "")
         except Exception as e:

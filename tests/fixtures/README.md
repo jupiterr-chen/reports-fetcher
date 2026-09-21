@@ -21,6 +21,7 @@
 | `cn/pdf_check.json` | CN | static.cninfo.com.cn PDF magic bytes（%PDF-） | 校验 |
 | `hk/prefix_samples.json` | HK | prefix.do 00700/0016 → stockId（返回五位 code `00016`） | 正常 |
 | `hk/prefix_nomatch.json` | HK | 不存在代码 → 200 + 空 stockInfo（JSONP） | 异常 |
+| `hk/prefix_search_variants.json` | HK | prefix.do 去零前缀搜索行为 + 00011 索引缺席（I4 实测 2026-09-21，适配器按精确匹配判 not_found） | 边界 |
 | `hk/search_00700_40000_3y.json` | HK | 深链检索解析后行集（含子类别/发布时间/PDF 链接/文件大小） | 正常 |
 | `hk/search_00700_40000_3y.raw.html` | HK | 上述检索的服务端渲染原始 HTML（解析器测试基准） | 正常 |
 | `hk/search_0016_40000_3y.json` | HK | 非日历年结（六月）公司：跨年标题 `2024/25 年報` 形态 | 边界 |

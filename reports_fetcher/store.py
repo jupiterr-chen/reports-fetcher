@@ -5,14 +5,19 @@
 - source_id 去重键 (market, symbol, source_id)，report_id 首次持久化时分配并绑定；
 - 缓存命中以 SHA-256 复核，同大小损坏不得当作命中；
 - 文件系统与 SQLite 无共同事务：archive_intents 记录提交时序，
-  重启时按 intent 收敛（I1 基础原子性；完整恢复协议在 I4）。
+  重启时按 intent 收敛；
+- 一个归档根目录一个进程级所有者锁（flock，跨容器互斥已在主力环境实测；
+  进程死亡自动释放，强杀后重跑不被阻塞）。
 """
 from __future__ import annotations
 
 import datetime as dt
+import fcntl
 import hashlib
 import json
+import os
 import re
+import socket
 import sqlite3
 import threading
 import uuid
@@ -195,6 +200,7 @@ class Store:
         self.tmp_dir.mkdir(parents=True, exist_ok=True)
         self.db_path = self.root / "archive.sqlite3"
         self._local = threading.local()
+        self._lock_fh = None
         self._init_schema()
         self._recover()
 
@@ -216,6 +222,48 @@ class Store:
         if conn is not None:
             conn.close()
             self._local.conn = None
+        self.release_owner_lock()
+
+    # ------------------------------------------------------------- 进程锁
+
+    def acquire_owner_lock(self) -> None:
+        """归档根目录进程级所有者锁（DESIGN §11.4）。
+
+        flock 非阻塞独占：第二个写实例明确报 store_in_use；
+        持锁进程死亡时由内核自动释放（强杀后重跑不被阻塞）。
+        跨容器互斥已在主力环境（Windows Docker Desktop bind mount）实测。
+        """
+        if self._lock_fh is not None:
+            return
+        lock_path = self.root / ".lock"
+        fh = open(lock_path, "a+")
+        try:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as e:
+            fh.close()
+            raise StoreError(
+                "归档根目录正被其他实例使用（单写者保护）",
+                code="store_in_use",
+                detail=f"lock={lock_path}: {e}") from e
+        try:
+            fh.seek(0)
+            fh.truncate()
+            fh.write(f"{socket.gethostname()} pid={os.getpid()} "
+                     f"acquired={_utcnow()}\n")
+            fh.flush()
+        except OSError:  # pragma: no cover - 锁信息写入失败不影响锁语义
+            pass
+        self._lock_fh = fh
+
+    def release_owner_lock(self) -> None:
+        if self._lock_fh is None:
+            return
+        try:
+            fcntl.flock(self._lock_fh.fileno(), fcntl.LOCK_UN)
+        except OSError:  # pragma: no cover
+            pass
+        self._lock_fh.close()
+        self._lock_fh = None
 
     def _init_schema(self) -> None:
         conn = self.connection()
@@ -390,18 +438,25 @@ class Store:
     # ------------------------------------------------------------- 下载事务
 
     def register_download(self, report_id: str) -> str:
-        """登记下载尝试：manifest 标 downloading，创建 registered intent。
+        """登记下载尝试：创建 registered intent。
 
-        已 done 且存在有效文件的报告不应走到这里（find_cached 已拦截）；
-        done 但文件失效的修复路径允许重新进入 downloading。
+        首次归档/修复 → manifest 标 downloading；刷新已有有效版本
+        （refresh，current artifact ready）→ manifest 保持 done，
+        失败只记任务尝试、不降级已有有效内容（DESIGN §11.3 步骤 2）。
         """
         attempt_id = uuid.uuid4().hex
         now = _utcnow()
         conn = self.connection()
         with conn:
             conn.execute(
-                "UPDATE manifest SET status='downloading', updated_at=? "
-                "WHERE report_id=? AND status IN ('discovered','failed','done')",
+                """UPDATE manifest SET
+                       status=CASE WHEN EXISTS(
+                           SELECT 1 FROM artifacts a
+                           WHERE a.artifact_id = manifest.current_artifact_id
+                             AND a.state='ready')
+                       THEN 'done' ELSE 'downloading' END,
+                       updated_at=?
+                   WHERE report_id=? AND status IN ('discovered','failed','done')""",
                 (now, report_id))
             conn.execute(
                 """INSERT INTO archive_intents(
@@ -436,8 +491,8 @@ class Store:
                 "SELECT artifact_id, state FROM artifacts "
                 "WHERE report_id=? AND sha256=?", (report_id, sha)).fetchone()
             reused = existing is not None
+            prior_state = existing["state"] if existing is not None else None
             if existing is None:
-                # 11 个绑定参数：state 为字面量 'staged'
                 conn.execute(
                     """INSERT INTO artifacts(
                            artifact_id, report_id, sha256, bytes, media_type,
@@ -466,13 +521,19 @@ class Store:
                 (artifact_id, str(temp), rel_path, sha, downloaded.bytes, now,
                  attempt_id))
 
-        # 原子改名（同卷 .tmp → 目标）：不覆盖不同内容
+        # 原子改名（同卷 .tmp → 目标）：不覆盖合法在库的不同内容
+        # （artifact_id 由内容派生，同名异容仅可能来自外部篡改或损坏现场）
         target.parent.mkdir(parents=True, exist_ok=True)
         if target.exists():
-            if _hash_file(target) != sha:
+            if _hash_file(target) == sha:
+                temp.unlink(missing_ok=True)
+            elif prior_state in ("unavailable", "staged", None):
+                # 修复路径：目标属已判损坏/未完成现场，以已校验临时文件覆盖
+                temp.replace(target)
+            else:
                 raise StoreError(
-                    "目标路径已存在且内容不同，拒绝覆盖", detail=f"target={rel_path}")
-            temp.unlink(missing_ok=True)
+                    "目标路径已存在且内容不同，拒绝覆盖（ready 版本被外部改动？）",
+                    detail=f"target={rel_path} prior_state={prior_state}")
         else:
             temp.replace(target)
 

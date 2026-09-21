@@ -6,9 +6,11 @@
 
 分组键 (market, symbol, report_period, doc_type, statement_scope)；
 报告期未知时每个 source_id 独立成组，不把空日期条目合成一份。
+排除/保留候选的理由记录在 warnings 与 debug 日志（DESIGN §15）。
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 
 from reports_fetcher.models import (
@@ -16,6 +18,8 @@ from reports_fetcher.models import (
     Report,
     ReportQuery,
 )
+
+logger = logging.getLogger("reports_fetcher.selection")
 
 _FULL_ROLES = (DocumentRole.FULL_REPORT, DocumentRole.AMENDMENT_FULL)
 
@@ -83,9 +87,12 @@ def select_reports(candidates: list[Report], query: ReportQuery,
                         if r.document_role in (DocumentRole.NOTICE,
                                                DocumentRole.SUMMARY)]
             if non_full:
+                skipped = [r.source_id for r in non_full]
+                logger.debug("报告组 %s/%s 无全文版本，排除候选 %s",
+                             key[2], key[3], skipped)
                 result.warnings.append(
                     f"报告组 {key[2]}/{key[3]} 仅有摘要或修订通知，"
-                    f"未获得全文（跳过: {[r.source_id for r in non_full]}）")
+                    f"未获得全文（跳过: {skipped}）")
             continue
         # 仅有修订通知时仍可选择原全文，但必须警告未合并修订（DESIGN §5）
         unmerged = [r for r in members if r.document_role is DocumentRole.NOTICE]
