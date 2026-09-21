@@ -2,12 +2,12 @@
 
 一句话：输入 A股/港股/美股代码 → 获取最新 N 份定期财报原文 → 按 市场/代码/财报日期 归档 + SQLite 索引；CLI + HTTP 双入口，Docker 为主力运行方式。
 
-## 当前状态（2026-09-21）
+## 当前状态（2026-09-21）——**一期已完成（v1.0.0）**
 
-- I0 `d3575b3`；I1 US（v0.1.0）；I2 CN（v0.2.0）；I3 HK（v0.3.0）——三市场 CLI 归档可用；I4 可靠性硬化（v0.4.0）。
-- **I5 已完成（v0.5.0）**：HTTP 服务与持久化任务——`docker compose up -d serve`（127.0.0.1:8000，本地无鉴权模式默认开），POST /api/v1/fetch-jobs（Idempotency-Key）→ 轮询 → /api/v1/reports → 按 ID 下载；serve 持锁期间 CLI 写操作报 store_in_use。
-- **下一步：I6（一期验收与发布）**：三市场集成冒烟矩阵、README/调用示例、性能基线、文档一致性核对、tag v1.0.0。
-- CLI 使用：`SEC_UA_EMAIL=<邮箱> docker compose run --rm cli fetch AAPL 600519 0700.HK --last 4`；`--refresh` 重下并保留旧版本。
+- I0–I6 全部交付：三市场 CLI 归档（I3 起可用）、可靠性硬化（I4）、HTTP 服务（I5）、验收发布（I6）。
+- 验收留证：[docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)（ARCHITECTURE §10 逐条核对 + 冒烟矩阵 + 性能基线 + 偏差记录）；使用文档：[README.md](README.md)。
+- **后续**：内容提取/指标/基本面分析按 [ANALYSIS_ROADMAP.md](ANALYSIS_ROADMAP.md) 另立计划（二期+）；backlog 见 ITERATION_PLAN §7。
+- CLI：`SEC_UA_EMAIL=<邮箱> docker compose run --rm cli fetch AAPL 600519 0700.HK --last 4`；HTTP：`docker compose up -d serve`（127.0.0.1:8000）。
 
 ## 文档地图（动手前先读）
 

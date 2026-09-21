@@ -28,3 +28,6 @@ tools/probe/out/
 .vscode/
 Thumbs.db
 .DS_Store
+
+# I6 验收运行产物（矩阵样本归档，不进版本库）
+/reports-acceptance/
