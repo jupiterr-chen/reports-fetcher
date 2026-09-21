@@ -4,10 +4,10 @@
 
 ## 当前状态（2026-09-21）
 
-- I0 已完成（提交 `d3575b3`）：三市场来源契约实测验证、19 个 fixture 入库、DESIGN 回填至 v1.3。
-- I1 已完成（提交 `16659f7`，v0.1.0）：US 核心链路垂直切片，`fetch AAPL --last 4` 端到端可用。
-- **I2 已完成（v0.2.0）**：CN 巨潮适配器（标题双变体解析、document_role、中文优先语言回退、分页+有界扩窗），`fetch 600519 000001 300750 --last 4` 端到端可用（196 个单测，DoD 全项通过）。
-- **下一步：I3（HK 适配器·披露易，HTML 深链契约）**。迭代范围、DoD、验收标准以 [ITERATION_PLAN.md](ITERATION_PLAN.md) 为准，不要自行扩大范围。I3 结束即达成"三市场 CLI 归档"的原始需求。
+- I0 已完成（`d3575b3`）；I1 US（`16659f7`，v0.1.0）；I2 CN（`181f2bb`，v0.2.0）。
+- **I3 已完成（v0.3.0）——原始需求"三市场 CLI 归档"达成，可实际投入使用**：HK 披露易适配器（titlesearch.xhtml HTML 深链、子类别权威映射、跨年标签→unknown、QTR-HK 显式可选类型）。三市场冒烟 9 只×4 份全通，244 个单测。
+- **下一步：I4（可靠性硬化）**：archive_intents 完整恢复协议、--refresh 与旧版本保留、丢失/损坏修复、进程锁。范围与 DoD 以 [ITERATION_PLAN.md](ITERATION_PLAN.md) 为准。
+- 实际使用：`SEC_UA_EMAIL=<邮箱> docker compose run --rm cli fetch AAPL 600519 0700.HK --last 4`；QTR-HK 需显式 `--forms QTR-HK`（默认关）。
 
 ## 文档地图（动手前先读）
 

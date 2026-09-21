@@ -78,6 +78,36 @@ def chinese_year(text: str) -> int | None:
     return digits[0] * 1000 + digits[1] * 100 + digits[2] * 10 + digits[3]
 
 
+def chinese_small_number(text: str) -> int | None:
+    """解析 1-99 的中文数字（含"十"进位），如 三→3、十→10、
+    十一→11、二十一→21、三十一→31；纯数字串直接转换。
+
+    用于 HK 业绩公告标题中的期末月/日（截至二零二六年三月三十一日止…）。
+    """
+    text = (text or "").strip()
+    if not text:
+        return None
+    if text.isdigit():
+        value = int(text)
+        return value if 1 <= value <= 99 else None
+    if text == "十":
+        return 10
+    if len(text) == 1:
+        value = _CN_DIGITS.get(text)
+        return value if value is not None and value >= 1 else None
+    if "十" in text:
+        parts = text.split("十")
+        if len(parts) != 2 or any(ch == "十" for ch in parts):
+            return None
+        tens = _CN_DIGITS.get(parts[0], 1) if parts[0] else 1
+        ones = _CN_DIGITS.get(parts[1], 0) if parts[1] else 0
+        if tens is None or ones is None:
+            return None
+        value = tens * 10 + ones
+        return value if 1 <= value <= 99 else None
+    return None
+
+
 def period_or_unknown(period: str | None) -> str:
     """文件名等展示用的报告期表示；未知用字面 unknown。"""
     return period if period else "unknown"

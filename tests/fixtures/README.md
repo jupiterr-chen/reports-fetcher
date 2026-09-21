@@ -24,7 +24,9 @@
 | `hk/search_00700_40000_3y.json` | HK | 深链检索解析后行集（含子类别/发布时间/PDF 链接/文件大小） | 正常 |
 | `hk/search_00700_40000_3y.raw.html` | HK | 上述检索的服务端渲染原始 HTML（解析器测试基准） | 正常 |
 | `hk/search_0016_40000_3y.json` | HK | 非日历年结（六月）公司：跨年标题 `2024/25 年報` 形态 | 边界 |
+| `hk/search_0016_40000_3y.raw.html` | HK | 上述检索原始 HTML（I3 实现期自 tools/probe/out 提升，2026-09-20 记录） | 边界 |
 | `hk/search_00700_10000_yeji_2026.json` | HK | t1=10000 + title=業績：[季度業績]/[中期業績] 公告（QTR-HK 验证） | 正常 |
+| `hk/search_00700_10000_yeji_2026.raw.html` | HK | 上述检索原始 HTML（I3 实现期自 tools/probe/out 提升，2026-09-20 记录） | 正常 |
 | `hk/search_00700_40000_10y.json` | HK | 10 年窗口 24 条单页全返（分页结论） | 行为 |
 | `hk/ablation_nocookie.json` | HK | 免 Cookie/免预热深链检索可行 | 行为 |
 | `hk/deprecated_endpoint.json` | HK | 旧 titleSearcherJson.do → 404（契约迁移证据） | 异常 |

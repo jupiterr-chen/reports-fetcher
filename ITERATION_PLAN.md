@@ -94,7 +94,9 @@ I2 与 I3 相互独立、均只依赖 I1，可按顺序做也可并行做（单�
 
 ### I3 HK 适配器（披露易）
 
-- **范围内**：`hk_hkexnews.py`（prefix.do stockId、titleSearcherJson、JSONP 剥壳 + 双重 JSON 数组形态解析、分页或窗口切分）；繁体标题解析（明确期末日、中文数字年份、ANNUAL/INTERIM/QTR-HK）；语言回退（中文优先）；非日历财年样本验证。
+> **状态：✅ 已完成（2026-09-21，v0.3.0）——原始需求（三市场 CLI 归档）达成**。DoD 全项核对：① HK 3 只样本 e2e 4/4 归档（00700 騰訊日历年结 / 00005 匯豐 / 00016 新鴻基地產六月年结）；② 跨年标签（2024/25 年報 等）→ `report_period=null + unknown + 警告`，不猜 12-31（fixture 单测 + e2e 双验证，0016 全部 20 组均为 unknown + 警告留痕）；③ QTR-HK 结论落地：**启用为显式可选类型**（默认不启用，`--forms QTR-HK` 显式请求；fixture 单测 + 真网 e2e 验证：騰訊季度业绩公告期末日来自标题明确日期 2026-03-31/2025-09-30）；④ 三市场 CLI 冒烟全通（每市场 3 只 ×4 份，US AAPL/MSFT/BABA + CN 600519/000001/300750 + HK 00700/00005/00016）。单测 244 个全绿；38 artifacts 三方一致 0 不匹配；重跑全 cached。实现期实测新知（回填 DESIGN §7）：JSONP 尾部带分号（`);`）；匯豐中期标题为"2026年中期業績報告"（年份在前），已增加该变体并将跨年检测放宽为任何 `YYYY/NN` 斜杠年份。范围注记：迭代计划原范围文本中的"titleSearcherJson、JSONP 剥壳 + 双重 JSON 数组形态"系 I0 前旧契约描述，实际实现按 DESIGN §7 v1.3（titlesearch.xhtml HTML 深链）执行。
+
+- **范围内**：`hk_hkexnews.py`（prefix.do stockId、titlesearch.xhtml HTML 深链解析、实体反转义 + 子类别权威映射、超站点单页上限年窗切分）；繁体标题解析（明确期末日、中文数字年份、ANNUAL/INTERIM/QTR-HK）；语言回退（中文优先）；非日历财年样本验证。
 - **DoD**：
   1. HK ≥3 只样本（含 1 家非日历年结公司）正确归档；
   2. "二零二四年年報"类无明确期末日样本 → `report_period=null` + `period_source=unknown` + 警告，不猜 12-31；
