@@ -174,7 +174,7 @@ I2 与 I3 相互独立、均只依赖 I1，可按顺序做也可并行做（单�
 |---|---|---|
 | 6-K 业绩附件识别 | REVIEW §2 | 需申报目录/附件角色/报告期识别，单独验收 |
 | 北交所支持 | 原 v1.0 P2 | column 契约待 I0 顺带记录 |
-| QTR-HK 默认启用 | DESIGN §7 | 依赖 I3 验证结论 |
+| QTR-HK 默认启用及混合选择修复 | [HK_QUARTERLY_DEFAULT_TASK.md](HK_QUARTERLY_DEFAULT_TASK.md) | P1；能力已验证，需修复冷/热库混合排序后默认启用 |
 | 定时增量抓取（--since） | 原 v1.0 P1 | 调度由外部承担，本期仅记录 |
 | 归档清单导出 Excel | 原 v1.0 P1 | — |
 | 财报内容提取与基本面分析 | ANALYSIS_ROADMAP | 独立阶段，另立计划 |

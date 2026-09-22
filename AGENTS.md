@@ -18,6 +18,7 @@
 | `REQUIREMENTS.md` | 一期需求基线（FR/NFR）与验收口径 |
 | `DESIGN.md`（v1.3） | 详细设计；§6/§7/§8 为已实测验证的来源契约 |
 | `HTTP_API.md` | 一期 HTTP 契约（I5 落地） |
+| `HK_QUARTERLY_DEFAULT_TASK.md` | v1.0.3 P1 任务：HK 默认季度业绩与混合选择冷/热库一致性 |
 | `docs/SOURCE_VERIFICATION.md` | I0 验证简报：三市场契约结论、DoD 核对、估算依据 |
 | `ARCHITECTURE.md` / `REVIEW.md` / `ANALYSIS_ROADMAP.md` | 架构、评审历史、后续分析路线（二期+，勿混入一期） |
 
