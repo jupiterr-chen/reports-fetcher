@@ -1,6 +1,6 @@
 # 当前机器访问、Mock 与生产联调
 
-适用于已部署 v1.0.1（76fee13）。本目录附件不改变生产服务。生产目前只发布服务器本机 127.0.0.1:8000，没有可直接从其他机器访问的局域网 HTTP 地址。
+适用于已部署 v1.0.2（7f5fbad）。本目录附件不改变生产服务。生产目前只发布服务器本机 127.0.0.1:8000，没有可直接从其他机器访问的局域网 HTTP 地址。
 
 ## 0. 推荐入口：本地集成套件 `integration-kit/`（命令行优先，无需 Postman）
 
@@ -50,7 +50,7 @@ Invoke-RestMethod http://127.0.0.1:18000/health/ready
 | [reports-fetcher.postman_collection.json](integration/reports-fetcher.postman_collection.json) | 6 个请求、带具名响应示例，含必填幂等头；推荐作为联调入口 |
 | [mock.postman_environment.json](integration/mock.postman_environment.json) | Mock 环境模板；需要填入你创建的 mock server URL |
 | [production-tunnel.postman_environment.json](integration/production-tunnel.postman_environment.json) | 生产隧道环境，baseUrl 为 http://127.0.0.1:18000 |
-| [openapi.production.json](integration/openapi.production.json) | 从运行中的 v1.0.1 原样导出的 OpenAPI，可供支持 OpenAPI 3.1 的工具导入 |
+| [openapi.production.json](integration/openapi.production.json) | 从运行中的 v1.0.2 原样导出的 OpenAPI，可供支持 OpenAPI 3.1 的工具导入 |
 
 Collection 没有自动执行脚本、没有密钥，默认指向 mock 占位域名，不会自动向生产发任务。只创建了本地文件，未向 Postman 云端上传、未创建或启动 mock server。
 
@@ -105,7 +105,7 @@ Postman 官方说明：[从 Collection/示例创建 Mock Server](https://learnin
 
 先确保 SSH 隧道已建立。Postman 选择 `PRODUCTION via SSH` 环境，禁用所有 `x-mock-*` 和 mock 专用 `x-api-key` 头。当前生产回环模式不用 Authorization；以后启用应用认证时再配置 Bearer token。
 
-先做只读验证：在 03 Poll 的 `jobId` 填入已验收任务 `job_85794434f82f40cfbbb6`，或在 05/06 的 `reportId` 填入已有 AAPL 报告 `7b726888c37d9415aafd`，即可查询真实结果与下载。不要把 mock ID 直接用于生产。
+先做只读验证：在 03 Poll 的 `jobId` 填入已验收任务 `job_2563e8787f4042c3a3be`，或在 05/06 的 `reportId` 填入已有 0700.HK 报告 `2727be0c6689aabad5a3`，即可查询真实结果与下载。不要把 mock ID 直接用于生产。
 
 随后做一次新任务联调：选择 02 Submit，保持默认 `symbols=["AAPL"]`、`last_n=1`、`refresh=false`，将 idempotencyKey 改成应用自己的唯一 key，发送并把返回 job_id 填入环境变量。重复发送相同 body/key 应返回同一 job_id；第一次返回 202，终态重放返回 200。
 

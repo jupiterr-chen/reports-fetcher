@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-2026-09-21 15:38（Asia/Shanghai）：**v1.0.1 已完成复审、部署及目标机 HTTP 冒烟，服务运行中。** 部署提交为 `76fee13be63fe727e7476c739cfad9ba39a6fa45`。
+2026-09-22 17:17（Asia/Shanghai）：**v1.0.2 已完成复审、升级部署及目标机 HTTP 冒烟，服务运行中。** 部署提交为 `7f5fbadadc63d1b026019e72c0a2dc9f5edfb40e`，镜像为 `reports-fetcher:7f5fbadadc63d1b026019e72c0a2dc9f5edfb40e`。v1.0.1 的首次上线记录作为历史保留在下文。
 
 服务目录：`/home/chen/dev/reports-fetcher`；宿主入口：`http://127.0.0.1:8000`，仅服务器本机监听；其他机器通过 SSH 隧道调用（下文有命令）。本次采用回环本地模式，未配置应用令牌或对外发布端口。
 
@@ -238,3 +238,71 @@ ssh -N -L 18000:127.0.0.1:8000 chen@192.168.1.150
 隧道建立后，可在本机访问 `http://127.0.0.1:18000/docs` 或调用 `/api/v1/fetch-jobs`。`192.168.1.150:8000` 不直接对局域网开放。服务日志与重启使用上述固定入口；生产归档目录不要与并行 CLI 共享写入。
 
 本次仅新增 reports-fetcher 自身的目录、配置、镜像、Compose 网络和容器；未改动其他项目、未递归删除/移动文件。保留 3 份冒烟报告和 2 个任务用于部署追溯。本记录另存于服务器应用根目录 `DEPLOY.md`，release 内文件保留原提交快照。
+
+## v1.0.2 升级上线记录（2026-09-22）
+
+### 范围与发布门禁
+
+本次升级处理 agents-manage 生产联调发现的五项问题：HK PDF 正文明示期末日提取及缓存回填、下载文件名、未选中候选 warning 噪音、任务初始 `symbols_total`，以及 integration-kit 契约同步。数据质量规则仍为“未知即 null”；`filing_date` 只用于下载名回退，不作为报告期来源。
+
+- 发布提交及标签：`7f5fbadadc63d1b026019e72c0a2dc9f5edfb40e` / `v1.0.2`。
+- 本地 Docker 全量测试：**353 passed，2 warnings，24.00 秒**。
+- integration-kit 契约测试：**33 tests OK，23.720 秒**；超时场景产生两条预期的 BrokenPipe 测试日志。
+- 使用 HKEX 官方腾讯中期报告 `2026082500557_c.pdf` 和年报 `2026040901232_c.pdf` 做真实 PDF 提取复核，分别得到 `2026-06-30`、`2025-12-31`。
+- `git diff --check` 通过；`pdfminer.six 20260107` 在目标镜像内可导入，应用版本命令返回 `reports-fetcher 1.0.2`。
+
+### 环境预检查与制品
+
+升级前确认 SSH、Docker 28.5.2、Compose v2.40.3 和约 40G 可用磁盘正常；v1.0.1 容器持续运行，端口仍为 `127.0.0.1:8000`。复用并保留 `shared/config.toml`、`shared/.env`、`shared/reports`，没有输出凭据，也没有删除或移动旧 release、镜像或归档。
+
+| 项目 | 实际值 |
+|---|---|
+| 完成时间 | 2026-09-22 17:17:34 +08:00 |
+| 源码 release | `/home/chen/dev/reports-fetcher/releases/7f5fbadadc63d1b026019e72c0a2dc9f5edfb40e` |
+| 上传包 | `releases/reports-fetcher-7f5fbadadc63d1b026019e72c0a2dc9f5edfb40e.tar`，1054720 bytes |
+| 包 SHA-256 | `740b340e15c678d34d1fb58c6286fa03d83c06ee1b4ddf56fd7a58951ae8ba44`（本地与远端一致） |
+| 镜像标签 | `reports-fetcher:7f5fbadadc63d1b026019e72c0a2dc9f5edfb40e` |
+| 镜像 ID | `sha256:dfb1434ca8cc3e7a8c26b388ac777087db157efcad9d04a08d59bd8dcf3b79db` |
+| 容器 / Compose 项目 | `reports-fetcher-serve-1` / `reports-fetcher` |
+| 端口 / 模式 | `127.0.0.1:8000 -> container:8000`，回环本地模式 |
+| 固定运维入口 | `/home/chen/dev/reports-fetcher/compose-release.sh`，已固定 v1.0.2 SHA |
+| 回滚入口备份 | `/home/chen/dev/reports-fetcher/compose-release-76fee13be63fe727e7476c739cfad9ba39a6fa45.sh` |
+
+目标机原生 Docker 构建约 140 秒。先完成新镜像的版本和依赖自检，再备份旧入口并替换固定运维入口，最后执行：
+
+```sh
+sh /home/chen/dev/reports-fetcher/compose-release.sh config --quiet
+sh /home/chen/dev/reports-fetcher/compose-release.sh build serve
+sh /home/chen/dev/reports-fetcher/compose-release.sh up -d --no-deps serve
+curl --fail --silent --show-error http://127.0.0.1:8000/health/ready
+sh /home/chen/dev/reports-fetcher/compose-release.sh restart serve
+```
+
+升级未改变 Compose 项目名、服务名或网络，因此同一 Docker 网络内的调用方仍使用 `http://serve:8000`。宿主端仍仅监听 `127.0.0.1:8000`。
+
+### 生产定向验收
+
+在运行容器内通过真实 HTTP 调用生产服务，未使用 TestClient 或 mock。任务请求为 `symbols=["0700.HK"]`、`last_n=3`、`refresh=false`；只验证本次修复及必要的持久化边界，没有重复三市场抓取或压力测试。
+
+| 检查 | 结果 |
+|---|---|
+| `/health/ready` / `/openapi.json` | 200 / ok；OpenAPI 版本 1.0.2 |
+| 任务 | `job_2563e8787f4042c3a3be`；终态 succeeded |
+| 缓存行为 | downloaded=0、cached=3、failed=0，未重复下载 |
+| 初始进度 | `symbols_total=1`；首次验收脚本输出前任务已很快完成，终态为 1/1；queued/running 的 1/0 边界由本地测试覆盖 |
+| 幂等重放 | 相同 key/body 返回 200 和同一 job_id |
+| warnings | 任务与证券 warnings 均为空；未选中候选不污染结果 |
+| 2026 中报 | filing_date 2026-08-25；report_period 2026-06-30；period_source=document |
+| 2025 年报 | filing_date 2026-04-09；report_period 2025-12-31；period_source=document |
+| 2025 中报 | filing_date 2025-08-26；report_period 2025-06-30；period_source=document |
+| 文件 | `HK_00700_INTERIM_2026-06-30_2727be0c6689aabad5a3.pdf`；5451089 bytes；SHA-256 与档案一致 |
+| 缓存验证 | ETag 为 SHA-256；匹配 `If-None-Match` 返回 304 |
+| 受控重启后 | ready=ok；同一任务、三份报告和文件仍可读，校验结果不变 |
+
+### 部署中发现的情况
+
+1. 首次切换后的立即探测返回一次 empty reply；受控重启后的立即探测出现两次 connection reset。容器日志均显示应用正常完成 startup，带连接错误重试的就绪探测随后返回 200。最终容器运行、镜像和归档读取均正常。这是启动窗口内的瞬时连接状态，发布脚本后续应继续使用有界重试。
+2. v1.0.1 的固定入口末尾残留一行不可达的 `SH`，位于 `exec docker compose ...` 之后，未影响历史运行。v1.0.2 入口已移除该残行；旧入口按完整 SHA 原样保留用于审计和回滚参考。
+3. 首次验收脚本在全部断言通过后，因输出 JSON 使用 tuple key 导致格式化异常；仅影响测试结果打印，不影响服务或数据。修正验收脚本后以同一幂等任务重新执行并完整通过。
+
+生产服务当前为 v1.0.2，未修改其他项目，未执行递归删除、移动或权限变更。旧 release、镜像和启动入口备份均保留；如需回滚，先确认数据库兼容，再将稳定入口恢复为旧 SHA 并执行 `up -d --no-deps serve`。
