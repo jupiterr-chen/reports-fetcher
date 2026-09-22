@@ -508,10 +508,14 @@ class HKHkexnewsAdapter(BaseMarketAdapter):
             warnings.append(f"發放時間无法解析: {title!r} "
                             f"raw={row.get('release_datetime')!r}")
         period, period_source, period_warning = parse_hk_title_period(title)
-        if period_warning:
-            warnings.append(f"{period_warning}: {title!r}")
         language = "en" if re.search(r"_e\.pdf$", file_link) else "zh"
         metadata: dict = {"subcategory": subcategory}
+        if period_warning:
+            # 候选级期末告警随报告携带，不进入 discovery.warnings：
+            # 仅选中的报告才可能对外告警（core 在原文富化后重建），
+            # 未选中的候选最多在 coverage.notices 聚合一次（避免 last_n=1
+            # 被其他未选中行的未知期警告污染）。
+            metadata["period_warning"] = period_warning
         if row.get("release_datetime"):
             metadata["release_datetime"] = row["release_datetime"]  # 原值保留
         if row.get("file_size"):

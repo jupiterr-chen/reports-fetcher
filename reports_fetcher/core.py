@@ -19,6 +19,7 @@ from pathlib import Path
 from reports_fetcher.adapters import get_adapter
 from reports_fetcher.adapters.base import BaseMarketAdapter
 from reports_fetcher.config import Config
+from reports_fetcher import document_period
 from reports_fetcher.downloader import Transport, expected_kind_for_url
 from reports_fetcher.models import (
     FetchItem,
@@ -28,6 +29,7 @@ from reports_fetcher.models import (
     OUTCOME_CACHED,
     OUTCOME_DOWNLOADED,
     OUTCOME_FAILED,
+    PeriodSource,
     Report,
     ReportQuery,
     ReportsFetcherError,
@@ -37,7 +39,11 @@ from reports_fetcher.models import (
     SymbolPreviewItem,
     UaNotConfiguredError,
 )
-from reports_fetcher.selection import SelectionResult, select_reports
+from reports_fetcher.selection import (
+    PERIOD_UNKNOWN_HINT,
+    SelectionResult,
+    select_reports,
+)
 from reports_fetcher.store import Store
 from reports_fetcher.symbol import batch_normalize
 
@@ -121,6 +127,7 @@ class FetchService:
             max_discovery_requests=self.config.fetch.max_discovery_requests_per_symbol,
         )
         pending: list[_DownloadTask] = []
+        selections: dict[int, SelectionResult] = {}
         for norm in ordered:
             if deadline_ts is not None and time.monotonic() > deadline_ts:
                 batch.results.append(FetchResult(
@@ -131,6 +138,7 @@ class FetchService:
                             if forms_by_market is not None else forms)
             result, selection = self._discover(norm, query_base, market_forms)
             batch.results.append(result)
+            selections[id(result)] = selection
             for report in selection.selected:
                 item = self._prepare_archive(report, result, refresh=refresh)
                 if item is None or item.outcome == OUTCOME_CACHED:
@@ -163,6 +171,11 @@ class FetchService:
                 with ThreadPoolExecutor(max_workers=workers) as pool:
                     list(pool.map(self._run_download, pending))
         for result in batch.results:
+            selection = selections.get(id(result))
+            if selection is not None:
+                # 原文富化可能已补全选中的报告期：在最终状态前重建期末警告，
+                # 避免"已富化成功却仍保留陈旧 unknown 警告并降级"。
+                self._apply_period_warnings(result, selection)
             self._finalize_status(result)
         return batch
 
@@ -278,6 +291,17 @@ class FetchService:
         selection = select_reports(discovery.reports, query,
                                    language_preference=adapter.default_language_preference)
         warnings.extend(selection.warnings)
+        notices = list(selection.notices)
+        # 未选中的候选期末未知只聚合一次（PHASE1_REVIEW 后续：last_n=1
+        # 不得被其他未选中行的逐条未知期警告污染）。
+        selected_ids = {r.source_id for r in selection.selected}
+        unselected_unknown = [
+            r for r in discovery.reports
+            if r.report_period is None and r.source_id not in selected_ids]
+        if unselected_unknown:
+            notices.append(
+                f"另有 {len(unselected_unknown)} 个候选报告期未知且未选入 "
+                f"last_n（未逐条告警）")
         # PHASE1_REVIEW T6：区分"影响完整性的质量警告"（warnings）与
         # "说明性信息"（notices：正常 last_n 截取、偏好语言正常选择）；
         # 不足 N 份但取到文件 → insufficient_history 缺口。
@@ -291,16 +315,16 @@ class FetchService:
             "searched_to": discovery.searched_to,
             "insufficient_history": bool(selection.selected)
             and selection.selected_count < query.last_n,
-            "notices": list(selection.notices),
+            "notices": notices,
         }
         empty = FetchResult(market=norm.market, symbol=norm.symbol,
                             status="empty", error="no_reports",
                             coverage=coverage, warnings=warnings,
-                            notices=selection.notices,
+                            notices=notices,
                             display_name=resolved.display_name)
         ok = FetchResult(market=norm.market, symbol=norm.symbol,
                          status="ok", coverage=coverage, warnings=warnings,
-                         notices=selection.notices,
+                         notices=notices,
                          display_name=resolved.display_name)
         return (ok if selection.selected else empty, selection)
 
@@ -326,6 +350,7 @@ class FetchService:
         """
         try:
             ref = self.store.upsert_report(report)
+            self._sync_report_period(report, ref)
             cached = None if refresh else self.store.find_cached(ref.report_id)
         except StoreError as e:
             logger.error("store 写入失败 %s: %s", report.source_id, e)
@@ -335,6 +360,10 @@ class FetchService:
             return None
         if cached is not None:
             logger.info("缓存命中 %s -> %s", report.source_id, cached.local_path)
+            # 缓存命中同样富化（已归档的 HK PDF 可在后续抓取时补齐 manifest，
+            # 不重下）；文件内容与路径不变，不产生重复/孤儿归档。
+            self._maybe_enrich_period(report, ref.report_id,
+                                      cached.local_path, cached.media_type)
             result.items.append(FetchItem(
                 report_id=ref.report_id, source_id=report.source_id,
                 outcome=OUTCOME_CACHED, local_path=str(cached.local_path)))
@@ -362,6 +391,11 @@ class FetchService:
             task.item.local_path = str(self.store.root / outcome.rel_path)
             if outcome.reused:
                 task.item.detail = "内容未变化，复用既有内容版本"
+            # 归档提交完成后才富化（已校验本地 PDF 存在）：只改 manifest
+            # 元数据，不触碰 artifact/路径与原子提交/恢复语义。
+            self._maybe_enrich_period(report, task.item.report_id,
+                                      task.item.local_path,
+                                      downloaded.media_type)
             logger.info("归档完成 %s -> %s%s", report.source_id, outcome.rel_path,
                         "（复用既有内容版本）" if outcome.reused else "")
         except Exception as e:
@@ -375,6 +409,68 @@ class FetchService:
             task.item.error = code
             task.item.detail = detail[:300]
             logger.warning("下载失败 %s: %s %s", report.source_id, code, detail)
+
+    @staticmethod
+    def _sync_report_period(report: Report, ref) -> None:
+        """库中生效报告期回填内存对象（未知不覆盖可信，保证警告不陈旧）。"""
+        if report.report_period is None and ref.report_period:
+            report.report_period = ref.report_period
+            try:
+                report.period_source = PeriodSource(ref.period_source)
+            except ValueError:  # pragma: no cover - 未知来源串
+                report.period_source = PeriodSource.UNKNOWN
+
+    def _maybe_enrich_period(self, report: Report, report_id: str,
+                             local_path: str, media_type: str) -> bool:
+        """HK PDF 年報/中期：报告期未知时从已校验原文提取明确期末日。
+
+        仅在本地 PDF 已通过原子提交（或缓存复核）后调用；只更新 manifest
+        元数据，绝不触碰归档文件/路径。失败非致命，保持 null + unknown。
+        """
+        if report.market is not Market.HK \
+                or report.doc_type not in ("ANNUAL", "INTERIM"):
+            return False
+        if report.report_period is not None \
+                or report.period_source is not PeriodSource.UNKNOWN:
+            return False
+        if media_type != "application/pdf":
+            return False
+        try:
+            period = document_period.extract_report_period(Path(local_path))
+        except Exception as e:  # noqa: BLE001 - 提取失败不得影响抓取
+            logger.warning("原文报告期提取异常 %s: %s", report.source_id, e)
+            return False
+        if not period:
+            return False
+        try:
+            updated = self.store.enrich_report_period(report_id, period)
+        except StoreError as e:
+            logger.warning("报告期富化写入失败 %s: %s", report.source_id, e)
+            return False
+        if updated:
+            report.report_period = period
+            report.period_source = PeriodSource.DOCUMENT
+            logger.info("原文富化报告期 %s -> %s", report.source_id, period)
+        return updated
+
+    @staticmethod
+    def _apply_period_warnings(result: FetchResult,
+                               selection: SelectionResult) -> None:
+        """原文富化后重建期末警告：仅对选中且仍未知的报告告警。
+
+        清除 selection 产生的陈旧 unknown 集总警告，避免已成功富化的报告
+        仍被当作 partial 缺口。
+        """
+        result.warnings = [w for w in result.warnings
+                           if PERIOD_UNKNOWN_HINT not in w]
+        usable_sources = {i.source_id for i in result.items
+                          if i.outcome != OUTCOME_FAILED}
+        unknown = [r for r in selection.selected
+                   if r.report_period is None
+                   and r.source_id in usable_sources]
+        if unknown:
+            result.warnings.append(
+                f"{len(unknown)} 份报告{PERIOD_UNKNOWN_HINT}")
 
     @staticmethod
     def _finalize_status(result: FetchResult) -> None:

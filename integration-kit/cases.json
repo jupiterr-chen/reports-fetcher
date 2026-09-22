@@ -1,0 +1,225 @@
+{
+  "kit": "reports-fetcher-local-mock-kit",
+  "contract_version": "1.0.2",
+  "api_prefix": "/api/v1",
+  "default_mock_base_url": "http://127.0.0.1:18765",
+  "mock_only": {
+    "warning": "The X-Mock-Scenario request header, POST /__mock/reset and GET /__mock/scenarios exist only in the local mock. NEVER send them to production.",
+    "scenario_header": "X-Mock-Scenario",
+    "default_scenario": "success",
+    "reset_route": "POST /__mock/reset",
+    "scenarios_route": "GET /__mock/scenarios"
+  },
+  "terminal_statuses": ["succeeded", "partial", "failed"],
+  "job_status_progression": ["queued", "running", "succeeded|partial|failed"],
+  "public_response_contract": {
+    "source": "authoritative FetchResult.coverage / JobSymbolOut (v1.0.2 core)",
+    "coverage_fields": [
+      "requested", "selected", "total_groups", "exhausted", "truncated",
+      "searched_from", "searched_to", "insufficient_history", "notices"
+    ],
+    "note": "coverage is an open dict. These are the authoritative field names; the mock implements them for success, failed and no_reports. 'returned' is NOT part of the contract and must not be relied on. Mock-specific omissions (e.g. searched_from/to are always null because the mock does not search a window) are intentional and documented in README/API."
+  },
+  "scenarios": [
+    {
+      "name": "success",
+      "submit_http": 202,
+      "terminal_job_status": "succeeded",
+      "symbol_status": "succeeded",
+      "produces_files": true,
+      "expect": [
+        "Each requested symbol yields last_n reports with usable files.",
+        "summary.downloaded counts newly created reports; a later new-key job reports them as cached."
+      ]
+    },
+    {
+      "name": "partial",
+      "submit_http": 202,
+      "terminal_job_status": "partial",
+      "symbol_status": "partial",
+      "produces_files": true,
+      "expect": [
+        "At least one report has report_period=null and period_source=unknown with a warning.",
+        "Usable files are still present and downloadable; a client MUST NOT discard them.",
+        "job status is partial (not failed)."
+      ]
+    },
+    {
+      "name": "failed",
+      "submit_http": 202,
+      "terminal_job_status": "failed",
+      "symbol_status": "failed",
+      "produces_files": false,
+      "expect": [
+        "GET /api/v1/fetch-jobs/{id} returns HTTP 200 while job status is failed.",
+        "Each symbol has error.code=source_unavailable and error.retryable=true.",
+        "report_ids is empty."
+      ]
+    },
+    {
+      "name": "no_reports",
+      "submit_http": 202,
+      "terminal_job_status": "succeeded",
+      "symbol_status": "no_reports",
+      "produces_files": false,
+      "expect": [
+        "The source search completed normally but matched nothing.",
+        "Each symbol warnings contains no_matching_reports."
+      ]
+    },
+    {
+      "name": "queue_full",
+      "submit_http": 429,
+      "terminal_job_status": null,
+      "symbol_status": null,
+      "produces_files": false,
+      "expect": [
+        "POST returns 429 with a Retry-After header and problem code=queue_full.",
+        "No job is created; retry later."
+      ]
+    },
+    {
+      "name": "slow",
+      "submit_http": 202,
+      "terminal_job_status": "succeeded",
+      "symbol_status": "succeeded",
+      "produces_files": true,
+      "expect": [
+        "The queued/running phase is stretched by a finite budget (default 8000 ms).",
+        "A client with a shorter overall timeout must give up in bounded time (no infinite wait).",
+        "The job still reaches a terminal state eventually."
+      ]
+    }
+  ],
+  "idempotency": {
+    "key_header": "Idempotency-Key",
+    "key_rule": "1-128 printable ASCII characters; mandatory",
+    "scope": "(client_id, idempotency_key)",
+    "same_key_same_effective_request": {
+      "pending": "202 with the original job_id",
+      "terminal": "200 with the original job_id"
+    },
+    "same_key_different_request": {"http": 409, "code": "idempotency_conflict"},
+    "effective_defaults": "Omitted last_n (4), refresh (false) and forms_by_market are filled with their effective values before the request hash is compared.",
+    "retry_rule": "On a network timeout retry the SAME key with the SAME body; never generate a new key for the same logical action."
+  },
+  "error_status_map": {
+    "400": ["missing_idempotency_key", "invalid_idempotency_key", "invalid_cursor"],
+    "401": ["unauthorized (token mode only)"],
+    "403": ["forbidden (token mode only)"],
+    "404": ["not_found (job / report / artifact)"],
+    "409": ["idempotency_conflict", "file_not_available"],
+    "413": ["payload_too_large"],
+    "415": ["unsupported_media_type"],
+    "422": ["invalid_request (validation, unknown field, unsupported form, malformed JSON, unknown mock scenario)"],
+    "429": ["queue_full"],
+    "500": ["internal_error"],
+    "503": ["store_unavailable"]
+  },
+  "test_cases": [
+    {
+      "id": "health",
+      "steps": ["GET /health/live", "GET /health/ready"],
+      "expect": "200 with status=ok"
+    },
+    {
+      "id": "happy_path",
+      "steps": [
+        "POST /api/v1/fetch-jobs with Idempotency-Key and {\"symbols\":[\"AAPL\"],\"last_n\":2}",
+        "poll GET status_url until terminal",
+        "GET /api/v1/reports?market=US&symbol=AAPL",
+        "GET /api/v1/reports/{report_id}/file",
+        "sha256(file bytes) == item.sha256"
+      ],
+      "expect": "202 -> succeeded; 2 items; checksum matches; ETag matches"
+    },
+    {
+      "id": "progression",
+      "steps": ["submit", "poll rapidly and record statuses"],
+      "expect": "observes queued then running then a terminal status"
+    },
+    {
+      "id": "idempotent_replay",
+      "steps": [
+        "submit key K",
+        "submit key K again while pending -> 202 same job_id",
+        "wait terminal",
+        "submit key K again -> 200 same job_id"
+      ],
+      "expect": "no duplicate job"
+    },
+    {
+      "id": "conflict",
+      "steps": ["submit key K body A", "submit key K body B"],
+      "expect": "409 idempotency_conflict"
+    },
+    {
+      "id": "validation",
+      "steps": [
+        "POST without Idempotency-Key",
+        "POST with 129-char key",
+        "POST symbols=[]",
+        "POST last_n=21",
+        "POST unknown field",
+        "POST Content-Type: text/plain",
+        "POST malformed JSON"
+      ],
+      "expect": "400/400/422/422/422/415/422 with problem+json code"
+    },
+    {
+      "id": "queue_full",
+      "steps": ["POST with X-Mock-Scenario: queue_full"],
+      "expect": "429 + Retry-After + code=queue_full"
+    },
+    {
+      "id": "partial",
+      "steps": ["POST with X-Mock-Scenario: partial", "download all report_ids"],
+      "expect": "terminal partial; unknown-period warning; files still usable"
+    },
+    {
+      "id": "failed",
+      "steps": ["POST with X-Mock-Scenario: failed", "GET job"],
+      "expect": "HTTP 200, job status failed, retryable error"
+    },
+    {
+      "id": "no_reports",
+      "steps": ["POST with X-Mock-Scenario: no_reports"],
+      "expect": "terminal succeeded, symbol status no_reports"
+    },
+    {
+      "id": "unknown_ids",
+      "steps": [
+        "GET /api/v1/fetch-jobs/job_nope",
+        "GET /api/v1/reports/r_nope",
+        "GET /api/v1/reports/r_nope/file"
+      ],
+      "expect": "404 problem+json code=not_found"
+    },
+    {
+      "id": "conditional_file",
+      "steps": ["download file, capture ETag", "download again with If-None-Match"],
+      "expect": "second response 304 with no body"
+    },
+    {
+      "id": "bounded_timeout",
+      "steps": [
+        "POST with X-Mock-Scenario: slow",
+        "poll with an overall timeout shorter than the slow budget"
+      ],
+      "expect": "client stops in bounded time and reports a timeout; no infinite loop"
+    }
+  ],
+  "file_notes": {
+    "bytes": "The file endpoint returns real fixture bytes, not JSON.",
+    "headers": ["Content-Type", "Content-Length", "Content-Disposition", "ETag", "X-Content-Type-Options: nosniff"],
+    "content_disposition": "Readable, deterministic: {market}_{symbol}_{doc_type}_{report_period|filing_date|unknown}_{report_id}.{ext}; historical (non-current artifact) appends artifact_id. Also carries filename*=UTF-8''. Do not rely on any fixed legacy filename.",
+    "etag": "quoted SHA-256 of the bytes",
+    "mime": "CN/HK reports are application/pdf, US reports are text/html in the mock",
+    "synthetic": "All mock fixture files are clearly marked MOCK and are NOT real financial information."
+  },
+  "progress_contract": {
+    "symbols_total": "Normalized submitted-symbol count, correct from queued onward (not derived from persisted results).",
+    "symbols_finished": "Count of persisted per-symbol results.",
+    "example_single_running": {"symbols_total": 1, "symbols_finished": 0}
+  }
+}

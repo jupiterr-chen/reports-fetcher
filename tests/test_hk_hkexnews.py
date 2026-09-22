@@ -267,7 +267,11 @@ class TestListReports:
         assert by_title["2025 年報"].report_period is None
         assert all(r.period_source is PeriodSource.UNKNOWN
                    for r in discovery.reports)
-        assert any("年份标签" in w for w in discovery.warnings)
+        # 候选级期末说明随报告携带，不再逐条进入 discovery.warnings
+        # （核心在原文富化后仅对选中报告告警 / 未选中 aggregate 一次）
+        assert any("年份标签" in (r.source_metadata.get("period_warning") or "")
+                   for r in discovery.reports)
+        assert not any("年份标签" in w for w in discovery.warnings)
         # 發放時間 DD/MM/YYYY → Asia/Hong_Kong 公告日
         assert by_title["中期報告 2026"].filing_date == "2026-08-25"
         assert by_title["中期報告 2026"].source_metadata["subcategory"] == "中期/半年度報告"
@@ -311,7 +315,9 @@ class TestListReports:
             assert report.report_period is None
             assert report.period_source is PeriodSource.UNKNOWN
             assert report.doc_type in ("ANNUAL", "INTERIM")
-        assert any("跨年标签" in w for w in discovery.warnings)
+            # 跨年说明随报告携带，不逐条污染 discovery.warnings
+            assert "跨年标签" in (report.source_metadata.get("period_warning") or "")
+        assert not any("跨年标签" in w for w in discovery.warnings)
         # 未知期置后 + 警告：选择仍可工作（按公告日排序）
         selection = select_reports(discovery.reports, ReportQuery(last_n=4),
                                    language_preference=["zh", "en"])

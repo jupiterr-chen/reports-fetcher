@@ -123,7 +123,8 @@ SEC_UA_EMAIL=you@example.com docker compose run --rm probe   # 来源契约探�
 ## 已知限制
 
 - 6-K 业绩附件、40-F、北交所不在一期范围（显式报 `unsupported_form` / `unsupported_market_segment`）；QTR-HK 需显式请求且仅覆盖 `[季度業績]` 公告。
-- 港股报告标题（单年 `2025 年報` 与跨年 `2024/25 年報` 均含）只有年份语义、无期末日证据 → `unknown` + 警告（不猜测，铁律）；仅业绩公告（`截至…止`）有明确期末日。
+- 港股报告标题（单年 `2025 年報` 与跨年 `2024/25 年報` 均含）只有年份语义、无期末日证据 → `unknown` + 警告（不猜测，铁律）；仅业绩公告（`截至…止`）有明确期末日。归档后若能从 HK 年报/中期 PDF **原文**提取明确期末日，则以 `period_source=document` 补写（仅补未知，绝不覆盖可信期）；提取失败/歧义非致命。`filing_date` 只作文件名回退，绝不作报告期来源。
+- 文件下载 `Content-Disposition` 使用可读且确定的名称 `market_symbol_doc_type_报告期|公告日|unknown_report_id.ext`（含 `filename*` UTF-8；历史版本追加 artifact_id），不使用中文标题前缀。
 - 披露易 `prefix.do` 为去零前缀搜索，个别代码（如 00011）在其索引中缺席 → `symbol_not_found`（源站数据现实，已留 fixture）。
 - SEC HTML 主文档为 Inline XBRL，一期不恢复图片/CSS 等离线资源。
 - P0 单进程单执行器、共享档案库；无 Webhook/任务取消/多租户；来源请求合并计入各市场限速预算（SEC 域名合计 ≤8 req/s 保守值）。
@@ -140,3 +141,4 @@ SEC_UA_EMAIL=you@example.com docker compose run --rm probe   # 来源契约探�
 | [ITERATION_PLAN.md](ITERATION_PLAN.md) | 迭代计划与各迭代验收记录 |
 | [docs/SOURCE_VERIFICATION.md](docs/SOURCE_VERIFICATION.md) | I0 来源契约验证简报 |
 | [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md) | 一期验收简报（§10 逐条留证 + 冒烟矩阵 + 性能基线） |
+| [integration-kit/README.md](integration-kit/README.md) | 离线本地联调套件（mock + 客户端 + 契约测试 + 生产切换） |

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from reports_fetcher.models import DownloadedFile
+from reports_fetcher.models import DownloadedFile, PeriodSource
 from reports_fetcher.store import (
     Store,
     StoreError,
@@ -601,3 +601,70 @@ class TestFileLossRepair:
             cached = reopened.find_cached(ref.report_id)
             assert cached is not None
             reopened.close()
+
+
+class TestPeriodEnrichment:
+    """原文报告期富化：仅补未知、绝不覆盖可信、不触碰归档文件。"""
+
+    @staticmethod
+    def _committed(store, **overrides):
+        report = make_report(**overrides)
+        ref = store.upsert_report(report)
+        content = (b"%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n"
+                   + b"x" * 400 + b"\n%%EOF\n")
+        outcome = store.commit_file(ref.report_id, report,
+                                    _downloaded(store, content,
+                                                media_type="application/pdf"),
+                                    store.register_download(ref.report_id))
+        return report, ref, outcome
+
+    def test_enrich_fills_unknown_period(self, tmp_path):
+        store = Store(tmp_path / "archive")
+        _report, ref, outcome = self._committed(
+            store, report_period=None, period_source=PeriodSource.UNKNOWN)
+        assert store.enrich_report_period(ref.report_id, "2025-12-31") is True
+        row = store.connection().execute(
+            "SELECT report_period, period_source FROM manifest WHERE report_id=?",
+            (ref.report_id,)).fetchone()
+        assert row["report_period"] == "2025-12-31"
+        assert row["period_source"] == "document"
+        # 归档文件与 artifact 路径不变（不产生重复/孤儿文件）
+        cached = store.find_cached(ref.report_id)
+        assert cached is not None and cached.artifact_id == outcome.artifact_id
+
+    def test_enrich_never_overwrites_trusted_period(self, tmp_path):
+        store = Store(tmp_path / "archive")
+        _report, ref, _outcome = self._committed(
+            store, report_period="2026-06-27",
+            period_source=PeriodSource.SOURCE_FIELD)
+        assert store.enrich_report_period(ref.report_id, "2020-01-01") is False
+        row = store.connection().execute(
+            "SELECT report_period, period_source FROM manifest WHERE report_id=?",
+            (ref.report_id,)).fetchone()
+        assert row["report_period"] == "2026-06-27"
+        assert row["period_source"] == "source_field"
+
+    def test_enrich_rejects_invalid_date(self, tmp_path):
+        store = Store(tmp_path / "archive")
+        _report, ref, _outcome = self._committed(
+            store, report_period=None, period_source=PeriodSource.UNKNOWN)
+        assert store.enrich_report_period(ref.report_id, "2025-02-30") is False
+        assert store.enrich_report_period(ref.report_id, "not-a-date") is False
+
+    def test_upsert_preserves_trusted_when_incoming_unknown(self, tmp_path):
+        store = Store(tmp_path / "archive")
+        known = make_report(report_period="2025-12-31",
+                            period_source=PeriodSource.DOCUMENT)
+        ref1 = store.upsert_report(known)
+        incoming = make_report(report_period=None,
+                               period_source=PeriodSource.UNKNOWN,
+                               title="refreshed title")
+        ref2 = store.upsert_report(incoming)
+        assert ref2.report_id == ref1.report_id
+        assert ref2.report_period == "2025-12-31"
+        assert ref2.period_source == "document"
+        row = store.connection().execute(
+            "SELECT report_period, period_source, title FROM manifest "
+            "WHERE report_id=?", (ref1.report_id,)).fetchone()
+        assert row["report_period"] == "2025-12-31"
+        assert row["title"] == "refreshed title"  # 其他元数据仍刷新

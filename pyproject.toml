@@ -4,11 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "reports-fetcher"
-version = "1.0.1"
+version = "1.0.2"
 description = "A股/港股/美股定期财报原文获取与归档（CLI，Docker 主力运行方式）"
 requires-python = ">=3.11"
 dependencies = [
     "requests>=2.31,<3",
+    "pdfminer.six>=20231228,<20270000",  # HK 归档 PDF 原文报告期提取（MIT 许可）
 ]
 
 [project.optional-dependencies]

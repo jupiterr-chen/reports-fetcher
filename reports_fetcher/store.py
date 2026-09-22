@@ -28,12 +28,13 @@ from reports_fetcher.models import (
     ArtifactState,
     DownloadedFile,
     FileNotAvailableError,
+    PeriodSource,
     Report,
     ReportStatus,
     ResolvedSymbol,
     StoreError,
 )
-from reports_fetcher.period import period_or_unknown
+from reports_fetcher.period import parse_iso_date, period_or_unknown
 
 SCHEMA_VERSION = 2  # v2 = v1 + jobs/job_symbols/job_items（I5，增量迁移）
 
@@ -206,6 +207,8 @@ def sanitize_component(name: str, max_len: int = _MAX_FILENAME_LEN) -> str:
 class ReportRef:
     report_id: str
     status: str
+    report_period: str | None = None
+    period_source: str = PeriodSource.UNKNOWN.value
 
 
 @dataclass
@@ -214,6 +217,7 @@ class CachedHit:
     local_path: Path
     sha256: str
     bytes: int
+    media_type: str
 
 
 @dataclass
@@ -408,15 +412,20 @@ class Store:
     # ------------------------------------------------------------- 元数据
 
     def upsert_report(self, report: Report) -> ReportRef:
-        """候选报告首次持久化分配稳定 report_id；重试返回原 ID（幂等）。"""
+        """候选报告首次持久化分配稳定 report_id；重试返回原 ID（幂等）。
+
+        报告期保护：来源刷新时若新候选报告期未知（null/unknown），不得覆盖
+        库中既有的可信非 unknown 报告期（如来源字段或已提取的 document）；
+        返回库中生效的报告期，供上层与内存对象同步。
+        """
         report_id = compute_report_id(report.market.value, report.symbol,
                                       report.source_id)
         now = _utcnow()
         conn = self.connection()
         with conn:
             existing = conn.execute(
-                "SELECT report_id, status FROM manifest "
-                "WHERE market=? AND symbol=? AND source_id=?",
+                "SELECT report_id, status, report_period, period_source "
+                "FROM manifest WHERE market=? AND symbol=? AND source_id=?",
                 (report.market.value, report.symbol, report.source_id)).fetchone()
             if existing is None:
                 # 19 个绑定参数：status 为字面量 'discovered'
@@ -438,7 +447,10 @@ class Store:
                      report.source_issuer_id,
                      json.dumps(report.source_metadata, ensure_ascii=False),
                      now, now))
-                return ReportRef(report_id, ReportStatus.DISCOVERED.value)
+                return ReportRef(report_id, ReportStatus.DISCOVERED.value,
+                                 report.report_period, report.period_source.value)
+            effective_period, effective_source = self._effective_period(
+                report, existing)
             conn.execute(
                 """UPDATE manifest SET
                      source_url=?, title=?, doc_type=?, source_form=?,
@@ -447,14 +459,55 @@ class Store:
                      source_issuer_id=?, source_metadata_json=?, updated_at=?
                    WHERE report_id=?""",
                 (report.source_url, report.title, report.doc_type,
-                 report.source_form, report.filing_date, report.report_period,
-                 report.period_source.value, report.language,
+                 report.source_form, report.filing_date, effective_period,
+                 effective_source, report.language,
                  report.document_role.value,
                  1 if report.is_amendment else 0, report.revision_of,
                  report.source_issuer_id,
                  json.dumps(report.source_metadata, ensure_ascii=False),
                  now, existing["report_id"]))
-            return ReportRef(existing["report_id"], existing["status"])
+            return ReportRef(existing["report_id"], existing["status"],
+                             effective_period, effective_source)
+
+    @staticmethod
+    def _effective_period(report: Report, existing) -> tuple[str | None, str]:
+        """新候选 vs 既有：未知不覆盖可信；返回 (period, period_source)。"""
+        incoming_unknown = report.report_period is None \
+            or report.period_source is PeriodSource.UNKNOWN
+        existing_trusted = bool(existing["report_period"]) \
+            and existing["period_source"] != PeriodSource.UNKNOWN.value
+        if incoming_unknown and existing_trusted:
+            return existing["report_period"], existing["period_source"]
+        return report.report_period, report.period_source.value
+
+    def enrich_report_period(self, report_id: str, period: str, *,
+                             period_source: str = PeriodSource.DOCUMENT.value
+                             ) -> bool:
+        """原文富化：仅当报告期仍未知时写入明确期末日（非致命、幂等）。
+
+        绝不用文档日期覆盖既有的可信非 unknown 报告期；不触碰 artifact 与
+        归档路径，因此不会产生重复/孤儿文件，也不影响原子提交语义。
+        """
+        parsed = parse_iso_date(period)
+        if parsed is None:
+            return False
+        conn = self.connection()
+        now = _utcnow()
+        with conn:
+            row = conn.execute(
+                "SELECT report_period, period_source FROM manifest "
+                "WHERE report_id=?", (report_id,)).fetchone()
+            if row is None:
+                return False
+            trusted = bool(row["report_period"]) \
+                and row["period_source"] != PeriodSource.UNKNOWN.value
+            if trusted:
+                return False
+            conn.execute(
+                "UPDATE manifest SET report_period=?, period_source=?, "
+                "updated_at=? WHERE report_id=?",
+                (parsed.isoformat(), period_source, now, report_id))
+        return True
 
     def find_cached(self, report_id: str) -> CachedHit | None:
         """缓存命中判定：done + ready + 磁盘文件 SHA-256 复核通过。
@@ -464,7 +517,8 @@ class Store:
         """
         conn = self.connection()
         row = conn.execute(
-            """SELECT a.artifact_id, a.local_path, a.bytes, a.sha256
+            """SELECT a.artifact_id, a.local_path, a.bytes, a.sha256,
+                      a.media_type
                FROM manifest m JOIN artifacts a
                  ON a.artifact_id = m.current_artifact_id
                WHERE m.report_id=? AND m.status='done' AND a.state='ready'""",
@@ -476,7 +530,8 @@ class Store:
                 or _hash_file(path) != row["sha256"]:
             self._mark_artifact_unavailable(row["artifact_id"], report_id)
             return None
-        return CachedHit(row["artifact_id"], path, row["sha256"], row["bytes"])
+        return CachedHit(row["artifact_id"], path, row["sha256"], row["bytes"],
+                         row["media_type"])
 
     def _mark_artifact_unavailable(self, artifact_id: str, report_id: str) -> None:
         conn = self.connection()

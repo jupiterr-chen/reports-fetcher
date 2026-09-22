@@ -298,7 +298,9 @@ class TestListReports:
         report = discovery.reports[0]
         assert report.report_period is None
         assert report.period_source is PeriodSource.UNKNOWN
-        assert any("报告期置空" in w for w in discovery.warnings)
+        # 候选级期末说明随报告携带，不再逐条进入 discovery.warnings
+        assert "报告期置空" in report.source_metadata.get("period_warning", "")
+        assert not any("报告期置空" in w for w in discovery.warnings)
 
     def test_forms_filter(self):
         adapter, _session = _make_listing_session()

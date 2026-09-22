@@ -61,7 +61,7 @@ reports-fetcher/
 | DownloadedFile | temp_path、sha256、bytes、media_type、final_url；仅代表已校验临时文件，不代表归档成功 |
 | FetchResult | market、symbol、status、items（report_id/source_id/outcome/error）、coverage、warnings、error |
 
-`period_source = source_field | explicit_title | unknown`，不再使用存在多种拼写的 inferred 布尔字段。一期不实现按法定披露窗口反推期末。公告时间若有原始时刻/时区则保存在 source_metadata；运行时间统一 UTC。`document_role = full_report | amendment_full | notice | summary | unknown`，不明确的完整性不能伪装 full_report。
+`period_source = source_field | explicit_title | document | unknown`，不再使用存在多种拼写的 inferred 布尔字段。一期不实现按法定披露窗口反推期末。`document` 仅用于 HK 年报/中期报告：报告期在来源元数据中未知时，从**已校验归档的本地 PDF 原文**提取明确期末日（中文"截至…止年度/六個月"、英文"for the … ended / as at <date>"），校验为真实日历日期；提取失败或文本歧义（多个矛盾日期）非致命，保持 null + unknown。`document` 只在报告期仍未知时写入，绝不覆盖既有的可信非 unknown 报告期。`filing_date` 仅可作为文件名回退，绝不作 report_period 来源。公告时间若有原始时刻/时区则保存在 source_metadata；运行时间统一 UTC。`document_role = full_report | amendment_full | notice | summary | unknown`，不明确的完整性不能伪装 full_report。
 
 report_id 在候选报告首次持久化时分配并绑定来源去重键；相同来源重试返回原 ID。artifact_id 标识一次已存内容版本；原文改变而 source_id 不变时产生新 artifact。同份报告的多证券别名暂仍按市场/代码建档，未来通过 issuer_id 映射汇合，不宣称已解决跨市场实体合并。
 
@@ -211,6 +211,8 @@ nested: {out}/{market}/{symbol}/{period_or_unknown}/{doc_type}__{title}__{report
 
 ID 为受控不透明标识，实际实现确定固定编码长度；始终参与文件名，不能靠标题碰巧唯一。清理 Windows/Linux 非法字符、控制字符、保留设备名、首尾空白/点号；限制标题和整路径长度。路径不足容纳 ID 时拒绝过长 out 配置，而不是再次碰撞。扩展名根据已验证媒体类型生成，源 URL 后缀仅作提示；`10-K/A` 不直接进入文件名。
 
+HTTP 下载（Content-Disposition）使用**可读且确定**的名称：`{market}_{symbol}_{doc_type}_{报告期|公告日|unknown}_{report_id}.{ext}`，同时给出 ASCII 回退与 `filename*=UTF-8''`（RFC 6266）。报告期未知时才退化为公告日，二者都无则字面 `unknown`；不使用中文标题前缀，避免下划线噪声。历史版本（非当前 artifact）名称追加 artifact_id，避免同名版本歧义；归档本地路径仍以 `report_id__artifact_id` 保证唯一。
+
 ### 11.2 数据表责任
 
 | 表 | 最小内容与约束 |
@@ -233,6 +235,7 @@ ID 为受控不透明标识，实际实现确定固定编码长度；始终参�
 3. 传输层写到同卷临时文件，校验/flush 后返回摘要；Store 在短事务中保存 staged artifact 及完整 archive intent，再提交事务。
 4. Store 唯一负责把临时文件原子改名到唯一目标，校验已有同名目标，不能覆盖不同内容。若相同 report+sha 已有 ready 版本，复用该 artifact，临时文件登记为可运维回收。
 5. 最终短事务标 artifact ready、manifest done/current_artifact_id，并更新任务项成功。当前有效文件版本在此切换。
+6. 归档提交（或缓存复核）完成后，仅当报告期仍未知时，可对 HK 年报/中期 PDF 从**已校验本地原文**提取明确期末日写入 manifest（period_source=document）。该步只更新 manifest 元数据，不新增/移动/删除归档文件，也不改变原子提交/恢复语义；提取失败或歧义非致命。后续来源刷新时，未知候选不得覆盖库中既有的可信非 unknown 报告期。缓存命中同样可回填，从而不重下即可补齐既有归档。
 
 文件系统与 SQLite 无共同事务。重启先核对 intent：目标存在且校验一致则补记 ready；只有完整临时文件则重试提交；两者都缺失/损坏则记录失败并按预算重抓。遗留文件不自动删除或递归清理；intent 保留诊断。数据库 done 但文件缺失时标 artifact unavailable；若当前文件不可用且无其他有效版本，manifest 转 failed 并清空 current_artifact_id，HTTP 下载返回 file_not_available。后续重抓若 checksum 与已有 unavailable artifact 一致，修复原 artifact 文件并恢复 ready，复用其 ID，避免违反 report_id+sha256 唯一约束。
 

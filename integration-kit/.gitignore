@@ -1,0 +1,5 @@
+# Runtime output produced by the example client / tests. Never commit.
+examples/*
+!examples/.gitkeep
+**/__pycache__/
+*.pyc

@@ -393,6 +393,14 @@ def create_app(config: Config, job_service: JobService,
                     auth_ctx: _AuthContext = Depends(auth)):
         store = app.state.jobs.store
         conn = store.connection()
+        manifest = conn.execute(
+            "SELECT report_id, market, symbol, doc_type, report_period, "
+            "filing_date, current_artifact_id FROM manifest WHERE report_id=?",
+            (report_id,)).fetchone()
+        if manifest is None:
+            raise ApiError(status=404, code="not_found",
+                           title="Not Found",
+                           detail=f"报告不存在: {report_id}")
         if artifact_id is not None:
             row = conn.execute(
                 "SELECT * FROM artifacts WHERE artifact_id=?",
@@ -402,13 +410,6 @@ def create_app(config: Config, job_service: JobService,
                     status=404, code="not_found", title="Not Found",
                     detail=f"artifact 不存在或不属于该报告: {artifact_id}")
         else:
-            manifest = conn.execute(
-                "SELECT current_artifact_id FROM manifest WHERE report_id=?",
-                (report_id,)).fetchone()
-            if manifest is None:
-                raise ApiError(status=404, code="not_found",
-                               title="Not Found",
-                               detail=f"报告不存在: {report_id}")
             if not manifest["current_artifact_id"]:
                 raise ApiError(status=409, code="file_not_available",
                                title="Conflict", detail="当前无可用文件版本")
@@ -423,7 +424,7 @@ def create_app(config: Config, job_service: JobService,
         etag = f'"{artifact["sha256"]}"'
         if request.headers.get("If-None-Match") == etag:
             return Response(status_code=304, headers={"ETag": etag})
-        filename = _download_filename(artifact)
+        filename = _download_filename(manifest, artifact)
         return FileResponse(
             path, media_type=artifact["media_type"],
             headers={
@@ -484,13 +485,41 @@ def _report_warnings(row) -> list[str]:
     return warnings
 
 
-def _download_filename(artifact: dict) -> str:
-    """附件文件名：ASCII 回退 + filename* UTF-8（中文文件名安全，RFC 6266）。"""
-    base = artifact["local_path"].rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
-    base = base.replace('"', "_") or "report"
-    ascii_name = re.sub(r"[^\x20-\x7e]", "_", base) or "report"
+def _filename_token(value: str) -> str:
+    """文件名片段：仅保留可读 ASCII，避免中文标题下划线噪声。"""
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", value).strip("-._")
+    return cleaned or "unknown"
+
+
+def _artifact_extension(artifact: dict) -> str:
+    media = artifact.get("media_type")
+    if media == "application/pdf":
+        return "pdf"
+    if media == "text/html":
+        return "html"
+    suffix = Path(artifact.get("local_path") or "").suffix.lstrip(".")
+    return suffix or "bin"
+
+
+def _download_filename(manifest, artifact: dict) -> str:
+    """可读且确定的附件名：market_symbol_doc_type_period_report_id.ext。
+
+    报告期已知用 report_period；否则退化为 filing_date（**仅文件名回退，
+    绝不作为 report_period 来源**）；两者都无则字面 unknown。历史版本
+    （非当前 artifact）追加 artifact_id，避免同名版本歧义。
+    同时提供 ASCII 回退与 filename* UTF-8（RFC 6266）。
+    """
+    period_token = manifest["report_period"] or manifest["filing_date"] \
+        or "unknown"
+    parts = [manifest["market"], manifest["symbol"], manifest["doc_type"],
+             period_token, manifest["report_id"]]
+    base = "_".join(_filename_token(str(p)) for p in parts)
+    if artifact.get("artifact_id") != manifest["current_artifact_id"]:
+        base = f"{base}_{_filename_token(str(artifact['artifact_id']))}"
+    name = f"{base}.{_artifact_extension(artifact)}"
+    ascii_name = re.sub(r"[^\x20-\x7e]", "_", name) or "report"
     return (f"attachment; filename=\"{ascii_name}\"; "
-            f"filename*=UTF-8''{quote(base)}")
+            f"filename*=UTF-8''{quote(name)}")
 
 
 def start_server(config: Config, tokens: dict[str, str] | None) -> None:

@@ -315,9 +315,11 @@ class CNCninfoAdapter(BaseMarketAdapter):
         filing_date = _announcement_date(announcement_time)
         if filing_date is None:
             warnings.append(f"公告时间缺失或非法: {title!r}")
-        for note in parse.notes:
-            warnings.append(f"{note}: {title!r}")
         metadata: dict = {}
+        if parse.report_period is None and parse.notes:
+            # 候选级期末告警随报告携带；不在 discovery.warnings 逐条告警
+            # （仅选中的报告才可能对外告警，见 core 的富化后重建）。
+            metadata["period_warning"] = parse.notes[0]
         if row.get("announcementId"):
             metadata["announcementId"] = str(row["announcementId"])
         if announcement_time is not None:

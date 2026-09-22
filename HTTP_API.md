@@ -80,6 +80,10 @@ X-Request-ID: req_example
 
 以上 ID 为示意；`summary` 统计文件处理结果，证券 resolve/list 阶段失败另见 `results`，因此不强求文件失败数等于证券失败数。单证券的 `items` 还应逐条给出 `report_id`（若已发现）、`source_id`、`status=downloaded|cached|failed` 和稳定错误码。进度在发现完成前不承诺总文件数。
 
+`progress.symbols_total` 等于提交时规范化去重后的代码数，从 queued 起即正确（不依赖已持久化结果）；`progress.symbols_finished` 只统计已持久化的证券结果。因此单代码任务在 queued/running 且尚无结果时应返回 `{"symbols_total": 1, "symbols_finished": 0}`，终态时 finished 等于该任务实际产出的证券结果数。
+
+质量警告只针对**选中且产出可用文件**的报告：未选入 `last_n` 的候选报告期未知等信息在 `coverage.notices` 聚合至多一次，不逐条进入 `warnings`。HK 归档 PDF 若在抓取后能从原文提取明确期末日，将补写 `report_period`/`period_source=document` 并撤下陈旧的未知期警告；已成功补全的报告不因该陈旧警告降级为 partial。`filing_date` 仅可作为文件名回退，绝不作 `report_period` 来源。
+
 ## 4. 状态、幂等与重启
 
 任务状态：`queued → running → succeeded | partial | failed`。证券状态同样使用 succeeded/partial/failed，另允许 `no_reports`。
@@ -107,7 +111,7 @@ X-Request-ID: req_example
 
 文件必须由 ID 查数据库映射到受控目录，规范化路径并检查包含关系与链接目标，不能把客户端参数拼接为路径。默认下载当前已验证文件，可指定属于该报告的 artifact_id；不存在返回 404，尚未完成或文件缺失返回 409 `file_not_available`，不隐式触发抓取。
 
-响应含正确 Content-Type、Content-Length、`Content-Disposition: attachment`、`X-Content-Type-Options: nosniff`、基于 SHA-256 的 ETag；匹配 If-None-Match 返回 304。HTM 默认附件下载，不在服务同源执行脚本；一期不保证离线恢复原站的图片/CSS/链接资源。
+响应含正确 Content-Type、Content-Length、`Content-Disposition: attachment`、`X-Content-Type-Options: nosniff`、基于 SHA-256 的 ETag；匹配 If-None-Match 返回 304。`Content-Disposition` 使用可读且确定的名称 `{market}_{symbol}_{doc_type}_{报告期|公告日|unknown}_{report_id}.{ext}`（同时给出 ASCII 回退与 `filename*=UTF-8''`），历史版本（非当前 artifact）追加 artifact_id 以避免歧义；不使用中文标题前缀。HTM 默认附件下载，不在服务同源执行脚本；一期不保证离线恢复原站的图片/CSS/链接资源。
 
 ## 6. 统一错误契约
 

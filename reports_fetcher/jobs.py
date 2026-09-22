@@ -503,6 +503,13 @@ class JobService:
         summary = json.loads(job["summary_json"]) if job["summary_json"] else None
         if summary is None:
             summary = {"downloaded": 0, "cached": 0, "failed": 0}
+        # progress.symbols_total 取自提交期规范化的去重代码数（queued 起即正确，
+        # 不依赖已持久化的 job_symbols 行）；symbols_finished 只统计已持久化结果。
+        try:
+            effective_request = json.loads(job["effective_request_json"] or "{}")
+        except ValueError:  # pragma: no cover - 入库 JSON 不可损坏
+            effective_request = {}
+        symbols_total = len(effective_request.get("symbols") or [])
         return {
             "job_id": job["job_id"],
             "status": job["status"],
@@ -511,7 +518,7 @@ class JobService:
             "started_at": job["started_at"],
             "finished_at": job["finished_at"],
             "deadline": job["deadline"],
-            "progress": {"symbols_total": len(symbols),
+            "progress": {"symbols_total": symbols_total,
                          "symbols_finished": len(symbols)},
             "summary": summary,
             "results": results,

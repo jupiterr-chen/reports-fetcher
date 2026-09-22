@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "source_url": "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0825/2026082500557_c.pdf",
+    "subject": "騰訊控股 (00700) 中期報告 2026（HKEXnews 官方 PDF；同一 URL 已记录于 tests/fixtures/hk/pdf_check.json）",
+    "captured_at": "2026-09-22",
+    "excerpt_page": "physical page 6",
+    "note": "captured_text 为官方 PDF 对应页的逐字摘录（未提交 5.4 MB 整份 PDF）；synthetic_cases 仅为解析边界用例，不是该 PDF 内容。测试不触网。"
+  },
+  "captured_text": "本人欣然向各股東提呈我們截至二零二六年六月三十日止三個月及六個月的中期報告。",
+  "synthetic_cases": {
+    "chinese_simplified": "截至2025年12月31日止年度",
+    "english_year": "For the year ended 31 December 2025",
+    "english_months": "for the six months ended 30 June 2026",
+    "english_as_at": "Consolidated statement of financial position as at 31 December 2025",
+    "invalid_date": "截至2025年2月30日止年度",
+    "ambiguous": "截至2024年12月31日止年度 ... 截至2025年12月31日止年度",
+    "no_end_date": "2025 年報",
+    "cross_year": "2024/25 年報"
+  }
+}

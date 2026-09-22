@@ -295,6 +295,53 @@ class TestFileDownload:
         not_modified = h.client.get(url, headers={"If-None-Match": etag})
         assert not_modified.status_code == 304
 
+    def test_download_disposition_readable_deterministic(self, h):
+        """Content-Disposition 含 market/symbol/doc_type/period/report_id。"""
+        h.run_to_completion()
+        item = h.client.get("/api/v1/reports").json()["items"][0]
+        resp = h.client.get(f"/api/v1/reports/{item['report_id']}/file")
+        disposition = resp.headers["content-disposition"]
+        assert item["market"] in disposition
+        assert item["symbol"] in disposition
+        assert item["doc_type"] in disposition
+        assert item["report_period"] in disposition
+        assert item["report_id"] in disposition
+        assert "filename*=UTF-8''" in disposition
+        assert disposition.endswith('.html"') or '.html"' in disposition
+
+    def test_download_old_artifact_name_disambiguated(self, h):
+        """历史版本文件名追加 artifact_id，与当前版本不混淆。"""
+        h.run_to_completion()
+        changed = _archive_urls()[0]
+        body_v2 = HTML_DOC_V2
+        h.session.mapping[changed] = FakeResponse(
+            200, body_v2,
+            headers={"Content-Type": "text/html",
+                     "Content-Length": str(len(body_v2))}, url=changed)
+        job_id = h.submit(key="refresh-names", refresh=True).json()["job_id"]
+        job_id = h.jobs.claim_next()
+        h.jobs.run_job(job_id)
+        versioned = None
+        for item in h.client.get("/api/v1/reports").json()["items"]:
+            detail = h.client.get(
+                f"/api/v1/reports/{item['report_id']}").json()
+            if len(detail["artifacts"]) == 2:
+                versioned = detail
+                break
+        assert versioned is not None
+        current = [a for a in versioned["artifacts"] if a["is_current"]][0]
+        old = [a for a in versioned["artifacts"] if not a["is_current"]][0]
+        current_disp = h.client.get(
+            f"/api/v1/reports/{versioned['report_id']}/file").headers[
+            "content-disposition"]
+        old_disp = h.client.get(
+            f"/api/v1/reports/{versioned['report_id']}/file",
+            params={"artifact_id": old["artifact_id"]}).headers[
+            "content-disposition"]
+        assert versioned["report_id"] in current_disp
+        assert old["artifact_id"] not in current_disp
+        assert old["artifact_id"] in old_disp
+
     def test_download_old_artifact_by_id(self, h):
         """DoD/§8-6：refresh 后旧 artifact 可按 ID 读取并校验 checksum。"""
         h.run_to_completion()

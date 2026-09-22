@@ -1,0 +1,609 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "reports-fetcher",
+    "version": "1.0.2",
+    "description": "Corrected, self-contained HTTP contract for reports-fetcher v1.0.2. This file fixes the gaps in the auto-generated schema: the mandatory Idempotency-Key request header, the 200 idempotent-replay response, RFC 9457 problem+json error responses, and the binary file response. It is the authoritative machine-readable contract for the local mock and for production. Mock-only routes (/__mock/*) and the X-Mock-Scenario header are intentionally NOT part of this contract.",
+    "contact": {
+      "name": "reports-fetcher integration kit"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:8000",
+      "description": "Production loopback (or an SSH tunnel / gateway mapped to it)"
+    },
+    {
+      "url": "http://127.0.0.1:18765",
+      "description": "Local mock kit"
+    }
+  ],
+  "tags": [
+    {"name": "jobs"},
+    {"name": "reports"},
+    {"name": "health"}
+  ],
+  "paths": {
+    "/health/live": {
+      "get": {
+        "tags": ["health"],
+        "summary": "Process liveness",
+        "operationId": "health_live",
+        "responses": {
+          "200": {
+            "description": "Process is alive",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/HealthOut"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "tags": ["health"],
+        "summary": "Readiness (database, archive dir, executor)",
+        "operationId": "health_ready",
+        "responses": {
+          "200": {
+            "description": "Ready",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/HealthOut"}
+              }
+            }
+          },
+          "503": {
+            "description": "Not ready; does not probe external sources",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/HealthOut"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/fetch-jobs": {
+      "post": {
+        "tags": ["jobs"],
+        "summary": "Submit a fetch job",
+        "operationId": "submit_job",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "1-128 printable ASCII characters. Uniquely identifies (client_id, key). Reusing the key with the same effective request replays the original job; reusing it with a different request returns 409.",
+            "schema": {"type": "string", "minLength": 1, "maxLength": 128}
+          },
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "required": false,
+            "description": "Optional client request id, echoed in X-Request-ID and problem bodies.",
+            "schema": {"type": "string"}
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {"$ref": "#/components/schemas/FetchJobRequest"}
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Job accepted and persisted (new job or replay of a still-pending job)",
+            "headers": {
+              "Location": {
+                "description": "Status URL of the job",
+                "schema": {"type": "string"}
+              },
+              "Retry-After": {
+                "description": "Suggested poll delay in seconds",
+                "schema": {"type": "string"}
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/JobAccepted"}
+              }
+            }
+          },
+          "200": {
+            "description": "Idempotent replay of a job that already reached a terminal state",
+            "headers": {
+              "Location": {"schema": {"type": "string"}},
+              "Retry-After": {"schema": {"type": "string"}}
+            },
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/JobAccepted"}
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or malformed Idempotency-Key",
+            "content": {
+              "application/problem+json": {
+                "schema": {"$ref": "#/components/schemas/Problem"}
+              }
+            }
+          },
+          "409": {
+            "description": "Idempotency key reused with a different request body",
+            "content": {
+              "application/problem+json": {
+                "schema": {"$ref": "#/components/schemas/Problem"}
+              }
+            }
+          },
+          "413": {
+            "description": "Request body larger than 64 KiB",
+            "content": {
+              "application/problem+json": {
+                "schema": {"$ref": "#/components/schemas/Problem"}
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type is not application/json",
+            "content": {
+              "application/problem+json": {
+                "schema": {"$ref": "#/components/schemas/Problem"}
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed (unknown field, empty symbols, last_n out of range, unsupported form, malformed JSON)",
+            "content": {
+              "application/problem+json": {
+                "schema": {"$ref": "#/components/schemas/Problem"}
+              }
+            }
+          },
+          "429": {
+            "description": "Queue full",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {"type": "string"}
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {"$ref": "#/components/schemas/Problem"}
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error (no stack traces or local paths)",
+            "content": {
+              "application/problem+json": {
+                "schema": {"$ref": "#/components/schemas/Problem"}
+              }
+            }
+          },
+          "503": {
+            "description": "Store or executor unavailable; the job was NOT accepted",
+            "content": {
+              "application/problem+json": {
+                "schema": {"$ref": "#/components/schemas/Problem"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/fetch-jobs/{job_id}": {
+      "get": {
+        "tags": ["jobs"],
+        "summary": "Get job status, progress, per-symbol results",
+        "operationId": "get_job",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Job document. HTTP 200 does NOT mean the job succeeded: inspect status (queued/running/succeeded/partial/failed). A failed job still returns 200.",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/JobStatusOut"}
+              }
+            }
+          },
+          "404": {
+            "description": "Job not found (or not visible to this client)",
+            "content": {
+              "application/problem+json": {
+                "schema": {"$ref": "#/components/schemas/Problem"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports": {
+      "get": {
+        "tags": ["reports"],
+        "summary": "List archived reports (read-only, never fetches)",
+        "operationId": "list_reports",
+        "parameters": [
+          {"name": "market", "in": "query", "required": false,
+           "schema": {"type": "string", "enum": ["CN", "HK", "US"]}},
+          {"name": "symbol", "in": "query", "required": false,
+           "schema": {"type": "string"}},
+          {"name": "doc_type", "in": "query", "required": false,
+           "schema": {"type": "string"}},
+          {"name": "period_from", "in": "query", "required": false,
+           "schema": {"type": "string", "format": "date"}},
+          {"name": "period_to", "in": "query", "required": false,
+           "schema": {"type": "string", "format": "date"}},
+          {"name": "limit", "in": "query", "required": false,
+           "schema": {"type": "integer", "minimum": 1, "maximum": 100,
+                      "default": 20}},
+          {"name": "cursor", "in": "query", "required": false,
+           "description": "Opaque cursor from a previous next_cursor",
+           "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {
+            "description": "Page of archived reports",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/ReportListOut"}
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid cursor",
+            "content": {
+              "application/problem+json": {
+                "schema": {"$ref": "#/components/schemas/Problem"}
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid filter value",
+            "content": {
+              "application/problem+json": {
+                "schema": {"$ref": "#/components/schemas/Problem"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/{report_id}": {
+      "get": {
+        "tags": ["reports"],
+        "summary": "Report metadata and file versions",
+        "operationId": "get_report",
+        "parameters": [
+          {"name": "report_id", "in": "path", "required": true,
+           "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {
+            "description": "Report detail",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/ReportDetailOut"}
+              }
+            }
+          },
+          "404": {
+            "description": "Report not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {"$ref": "#/components/schemas/Problem"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/{report_id}/file": {
+      "get": {
+        "tags": ["reports"],
+        "summary": "Download the current (or a specified) report file",
+        "operationId": "get_report_file",
+        "parameters": [
+          {"name": "report_id", "in": "path", "required": true,
+           "schema": {"type": "string"}},
+          {"name": "artifact_id", "in": "query", "required": false,
+           "description": "Download a specific historical artifact version",
+           "schema": {"type": "string"}},
+          {"name": "If-None-Match", "in": "header", "required": false,
+           "description": "ETag returned by a previous download; a match yields 304",
+           "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {
+            "description": "Raw file bytes. Content-Type is application/pdf or text/html; ETag is the quoted SHA-256 of the bytes.",
+            "headers": {
+              "ETag": {
+                "description": "Quoted SHA-256 of the file bytes",
+                "schema": {"type": "string"}
+              },
+              "Content-Disposition": {
+                "description": "attachment; filename=\"{market}_{symbol}_{doc_type}_{report_period|filing_date|unknown}_{report_id}.{ext}\" (historical, non-current artifact appends artifact_id); also carries filename* UTF-8.",
+                "schema": {"type": "string"}
+              },
+              "Content-Length": {"schema": {"type": "integer"}},
+              "X-Content-Type-Options": {
+                "schema": {"type": "string", "enum": ["nosniff"]}
+              }
+            },
+            "content": {
+              "application/pdf": {
+                "schema": {"type": "string", "format": "binary"}
+              },
+              "text/html": {
+                "schema": {"type": "string", "format": "binary"}
+              },
+              "application/octet-stream": {
+                "schema": {"type": "string", "format": "binary"}
+              }
+            }
+          },
+          "304": {
+            "description": "Not modified (If-None-Match matched the ETag)",
+            "headers": {
+              "ETag": {"schema": {"type": "string"}}
+            }
+          },
+          "404": {
+            "description": "Report or artifact not found / artifact does not belong to the report",
+            "content": {
+              "application/problem+json": {
+                "schema": {"$ref": "#/components/schemas/Problem"}
+              }
+            }
+          },
+          "409": {
+            "description": "File not available (code=file_not_available); never triggers an implicit fetch",
+            "content": {
+              "application/problem+json": {
+                "schema": {"$ref": "#/components/schemas/Problem"}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Application token. Local loopback mode runs without authentication."
+      }
+    },
+    "schemas": {
+      "HealthOut": {
+        "type": "object",
+        "properties": {
+          "status": {"type": "string", "enum": ["ok", "unavailable"]},
+          "detail": {"type": ["string", "null"]}
+        },
+        "required": ["status"]
+      },
+      "FetchJobRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "symbols": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "items": {"type": "string", "maxLength": 32}
+          },
+          "last_n": {"type": "integer", "minimum": 1, "maximum": 20,
+                     "default": 4},
+          "forms_by_market": {
+            "type": ["object", "null"],
+            "additionalProperties": {
+              "type": "array",
+              "minItems": 1,
+              "items": {"type": "string"}
+            }
+          },
+          "refresh": {"type": "boolean", "default": false}
+        },
+        "required": ["symbols"]
+      },
+      "JobAccepted": {
+        "type": "object",
+        "properties": {
+          "job_id": {"type": "string"},
+          "status": {"type": "string"},
+          "submitted_at": {"type": "string", "format": "date-time"},
+          "status_url": {"type": "string"}
+        },
+        "required": ["job_id", "status", "submitted_at", "status_url"]
+      },
+      "JobItemOut": {
+        "type": "object",
+        "properties": {
+          "report_id": {"type": "string"},
+          "source_id": {"type": "string"},
+          "status": {"type": "string",
+                     "enum": ["downloaded", "cached", "failed"]},
+          "artifact_id": {"type": ["string", "null"]},
+          "error": {"type": ["object", "null"], "additionalProperties": true}
+        },
+        "required": ["report_id", "source_id", "status"]
+      },
+      "JobSymbolOut": {
+        "type": "object",
+        "properties": {
+          "market": {"type": "string", "enum": ["CN", "HK", "US"]},
+          "symbol": {"type": "string"},
+          "display_name": {"type": ["string", "null"]},
+          "status": {"type": "string",
+                     "enum": ["succeeded", "partial", "failed", "no_reports"]},
+          "report_ids": {"type": "array", "items": {"type": "string"},
+                         "default": []},
+          "items": {"type": "array",
+                    "items": {"$ref": "#/components/schemas/JobItemOut"},
+                    "default": []},
+          "coverage": {"type": "object", "additionalProperties": true,
+                       "default": {}},
+          "warnings": {"type": "array", "default": []},
+          "error": {"type": ["object", "null"], "additionalProperties": true}
+        },
+        "required": ["market", "symbol", "status"]
+      },
+      "JobStatusOut": {
+        "type": "object",
+        "properties": {
+          "job_id": {"type": "string"},
+          "status": {"type": "string",
+                     "enum": ["queued", "running", "succeeded", "partial",
+                              "failed"]},
+          "attempt": {"type": "integer"},
+          "submitted_at": {"type": "string", "format": "date-time"},
+          "started_at": {"type": ["string", "null"], "format": "date-time"},
+          "finished_at": {"type": ["string", "null"], "format": "date-time"},
+          "deadline": {"type": ["string", "null"], "format": "date-time"},
+          "progress": {
+            "type": "object",
+            "description": "symbols_total = normalized submitted-symbol count (correct from queued); symbols_finished = count of persisted per-symbol results.",
+            "properties": {
+              "symbols_total": {"type": "integer", "minimum": 0},
+              "symbols_finished": {"type": "integer", "minimum": 0}
+            },
+            "additionalProperties": true
+          },
+          "summary": {"type": "object", "additionalProperties": true},
+          "results": {
+            "type": "array",
+            "items": {"$ref": "#/components/schemas/JobSymbolOut"}
+          }
+        },
+        "required": ["job_id", "status", "attempt", "submitted_at",
+                     "progress", "summary", "results"]
+      },
+      "ReportListItem": {
+        "type": "object",
+        "properties": {
+          "report_id": {"type": "string"},
+          "market": {"type": "string", "enum": ["CN", "HK", "US"]},
+          "symbol": {"type": "string"},
+          "issuer_id": {"type": ["string", "null"]},
+          "source_id": {"type": "string"},
+          "source_url": {"type": ["string", "null"]},
+          "title": {"type": ["string", "null"]},
+          "doc_type": {"type": "string"},
+          "report_period": {"type": ["string", "null"], "format": "date"},
+          "period_source": {"type": "string",
+                            "enum": ["source_field", "explicit_title",
+                                     "document", "unknown"]},
+          "filing_date": {"type": ["string", "null"], "format": "date"},
+          "language": {"type": ["string", "null"]},
+          "is_amendment": {"type": "boolean", "default": false},
+          "status": {"type": "string"},
+          "artifact_id": {"type": ["string", "null"]},
+          "sha256": {"type": ["string", "null"]},
+          "bytes": {"type": ["integer", "null"]},
+          "fetched_at": {"type": ["string", "null"], "format": "date-time"},
+          "warnings": {"type": "array", "items": {"type": "string"},
+                       "default": []},
+          "download_url": {"type": "string"}
+        },
+        "required": ["report_id", "market", "symbol", "source_id", "doc_type",
+                     "period_source", "status", "download_url"]
+      },
+      "ReportListOut": {
+        "type": "object",
+        "properties": {
+          "items": {"type": "array",
+                    "items": {"$ref": "#/components/schemas/ReportListItem"}},
+          "next_cursor": {"type": ["string", "null"]}
+        },
+        "required": ["items"]
+      },
+      "ArtifactOut": {
+        "type": "object",
+        "properties": {
+          "artifact_id": {"type": "string"},
+          "sha256": {"type": "string"},
+          "bytes": {"type": "integer"},
+          "media_type": {"type": "string",
+                         "enum": ["application/pdf", "text/html"]},
+          "fetched_at": {"type": "string", "format": "date-time"},
+          "state": {"type": "string",
+                    "enum": ["staged", "ready", "unavailable"]},
+          "is_current": {"type": "boolean"}
+        },
+        "required": ["artifact_id", "sha256", "bytes", "media_type",
+                     "fetched_at", "state", "is_current"]
+      },
+      "ReportDetailOut": {
+        "type": "object",
+        "properties": {
+          "report_id": {"type": "string"},
+          "market": {"type": "string", "enum": ["CN", "HK", "US"]},
+          "symbol": {"type": "string"},
+          "source_id": {"type": "string"},
+          "source_url": {"type": ["string", "null"]},
+          "title": {"type": ["string", "null"]},
+          "doc_type": {"type": "string"},
+          "source_form": {"type": ["string", "null"]},
+          "report_period": {"type": ["string", "null"], "format": "date"},
+          "period_source": {"type": "string",
+                            "enum": ["source_field", "explicit_title",
+                                     "document", "unknown"]},
+          "filing_date": {"type": ["string", "null"], "format": "date"},
+          "language": {"type": ["string", "null"]},
+          "is_amendment": {"type": "boolean", "default": false},
+          "revision_of": {"type": ["string", "null"]},
+          "status": {"type": "string"},
+          "current_artifact_id": {"type": ["string", "null"]},
+          "warnings": {"type": "array", "items": {"type": "string"},
+                       "default": []},
+          "artifacts": {"type": "array",
+                        "items": {"$ref": "#/components/schemas/ArtifactOut"}}
+        },
+        "required": ["report_id", "market", "symbol", "source_id", "doc_type",
+                     "period_source", "status", "artifacts"]
+      },
+      "Problem": {
+        "type": "object",
+        "description": "RFC 9457 problem details extended with stable code, request_id, retryable and optional field errors.",
+        "properties": {
+          "type": {"type": "string", "default": "about:blank"},
+          "title": {"type": "string"},
+          "status": {"type": "integer"},
+          "detail": {"type": "string"},
+          "instance": {"type": "string"},
+          "code": {"type": "string"},
+          "request_id": {"type": "string"},
+          "retryable": {"type": "boolean"},
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {"type": "string"},
+                "detail": {"type": "string"}
+              }
+            }
+          }
+        },
+        "required": ["title", "status", "code", "request_id", "retryable"]
+      }
+    }
+  }
+}

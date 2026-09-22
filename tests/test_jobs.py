@@ -104,6 +104,17 @@ class TestSubmit:
 
 
 class TestExecution:
+    def test_progress_counts_from_queued(self, tmp_path):
+        """progress 从 queued 起即反映提交的规范化代码数（非已持久化结果数）。"""
+        jobs, store, *_ = _harness(tmp_path)
+        submitted = _submit(jobs, symbols=["AAPL", "aapl", "MSFT"])  # 去重 → 2
+        doc = jobs.get_job(submitted.job_id)
+        assert doc["progress"] == {"symbols_total": 2, "symbols_finished": 0}
+        job_id = jobs.claim_next()
+        assert jobs.get_job(job_id)["status"] == "running"
+        assert jobs.get_job(job_id)["progress"] == {
+            "symbols_total": 2, "symbols_finished": 0}
+
     def test_claim_and_run_job(self, tmp_path):
         jobs, store, *_ = _harness(tmp_path)
         submitted = _submit(jobs, symbols=["AAPL"], last_n=4)

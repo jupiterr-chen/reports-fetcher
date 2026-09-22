@@ -1,0 +1,53 @@
+# reports-fetcher local integration kit - self-contained compose project.
+#
+# It deliberately uses a unique project name so it can never touch the main
+# reports-fetcher compose project or its running services.
+#
+#   docker compose -f integration-kit/compose.yaml up -d mock
+#   docker compose -f integration-kit/compose.yaml run --rm test
+#   docker compose -f integration-kit/compose.yaml run --rm client
+#   docker compose -f integration-kit/compose.yaml stop
+#
+# The kit only mounts itself and makes no external network requests at
+# runtime. BASE_IMAGE may point at a preloaded python:3.12-slim image.
+name: reports-fetcher-integration-kit
+
+services:
+  mock:
+    image: ${BASE_IMAGE:-python:3.12-slim}
+    working_dir: /kit
+    volumes:
+      - ./:/kit:ro
+    command: ["python", "mock/server.py", "--host", "0.0.0.0", "--port", "8080"]
+    ports:
+      - "127.0.0.1:18765:8080"
+
+  test:
+    image: ${BASE_IMAGE:-python:3.12-slim}
+    working_dir: /kit
+    volumes:
+      - ./:/kit:rw
+    environment:
+      REPORTS_MOCK_BASE_URL: http://mock:8080
+    depends_on:
+      - mock
+    command: ["python", "-m", "unittest", "discover", "-s", "tests", "-t", ".",
+              "-v"]
+
+  client:
+    image: ${BASE_IMAGE:-python:3.12-slim}
+    working_dir: /kit
+    volumes:
+      - ./:/kit:rw
+    environment:
+      REPORTS_API_BASE_URL: ${REPORTS_API_BASE_URL:-http://mock:8080}
+      REPORTS_API_TOKEN: ${REPORTS_API_TOKEN:-}
+      REPORTS_CLIENT_SYMBOLS: ${REPORTS_CLIENT_SYMBOLS:-AAPL}
+      REPORTS_CLIENT_LAST_N: ${REPORTS_CLIENT_LAST_N:-4}
+      REPORTS_CLIENT_TIMEOUT: ${REPORTS_CLIENT_TIMEOUT:-60}
+      REPORTS_CLIENT_POLL: ${REPORTS_CLIENT_POLL:-0.5}
+      REPORTS_CLIENT_OUT: ${REPORTS_CLIENT_OUT:-/kit/examples/out}
+      REPORTS_MOCK_SCENARIO: ${REPORTS_MOCK_SCENARIO:-}
+    depends_on:
+      - mock
+    command: ["python", "-m", "client.example_client"]

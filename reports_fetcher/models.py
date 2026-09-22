@@ -16,10 +16,15 @@ class Market(str, Enum):
 
 
 class PeriodSource(str, Enum):
-    """报告期可信级别（REQUIREMENTS §3）。"""
+    """报告期可信级别（REQUIREMENTS §3）。
+
+    DOCUMENT = 从已归档原文（HK PDF）中提取到明确期末日；仅在报告期仍未知
+    时启用，且绝不覆盖既有的可信非 unknown 报告期。
+    """
 
     SOURCE_FIELD = "source_field"
     EXPLICIT_TITLE = "explicit_title"
+    DOCUMENT = "document"
     UNKNOWN = "unknown"
 
 

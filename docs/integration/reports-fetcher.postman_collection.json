@@ -1,0 +1,698 @@
+{
+  "info": {
+    "name": "reports-fetcher v1.0.1 integration",
+    "description": "Documentation/examples only. Mock responses use fictional IDs and one 78-byte HTML fixture. No scripts, no automatic requests, no production credentials. Set baseUrl via environment. Copy returned real job_id/report_id manually for production. x-mock-response-name is disabled by default; enable only against a Postman mock server.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://replace-with-your-mock.mock.pstmn.io"
+    },
+    {
+      "key": "idempotencyKey",
+      "value": "integration-example-001"
+    },
+    {
+      "key": "jobId",
+      "value": "job_mock_001"
+    },
+    {
+      "key": "reportId",
+      "value": "mock_report_001"
+    }
+  ],
+  "item": [
+    {
+      "name": "01 Readiness",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-mock-response-name",
+            "value": "REPLACE_WITH_EXAMPLE_NAME",
+            "disabled": true
+          }
+        ],
+        "url": "{{baseUrl}}/health/ready"
+      },
+      "response": [
+        {
+          "name": "health-ready",
+          "originalRequest": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-mock-response-name",
+                "value": "REPLACE_WITH_EXAMPLE_NAME",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/health/ready"
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"status\": \"ok\"\n}",
+          "cookie": []
+        }
+      ]
+    },
+    {
+      "name": "02 Submit fetch job",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{idempotencyKey}}"
+          },
+          {
+            "key": "x-mock-response-name",
+            "value": "REPLACE_WITH_EXAMPLE_NAME",
+            "disabled": true
+          }
+        ],
+        "url": "{{baseUrl}}/api/v1/fetch-jobs",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"symbols\": [\n    \"AAPL\"\n  ],\n  \"last_n\": 1,\n  \"refresh\": false\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "name": "submit-queued",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              },
+              {
+                "key": "x-mock-response-name",
+                "value": "REPLACE_WITH_EXAMPLE_NAME",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/fetch-jobs",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"symbols\": [\n    \"AAPL\"\n  ],\n  \"last_n\": 1,\n  \"refresh\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "Accepted",
+          "code": 202,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "Location",
+              "value": "/api/v1/fetch-jobs/job_mock_001"
+            },
+            {
+              "key": "Retry-After",
+              "value": "2"
+            }
+          ],
+          "body": "{\n  \"job_id\": \"job_mock_001\",\n  \"status\": \"queued\",\n  \"submitted_at\": \"2026-09-21T08:00:00Z\",\n  \"status_url\": \"/api/v1/fetch-jobs/job_mock_001\"\n}",
+          "cookie": []
+        },
+        {
+          "name": "submit-replay-finished",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              },
+              {
+                "key": "x-mock-response-name",
+                "value": "REPLACE_WITH_EXAMPLE_NAME",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/fetch-jobs",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"symbols\": [\n    \"AAPL\"\n  ],\n  \"last_n\": 1,\n  \"refresh\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"job_id\": \"job_mock_001\",\n  \"status\": \"succeeded\",\n  \"submitted_at\": \"2026-09-21T08:00:00Z\",\n  \"status_url\": \"/api/v1/fetch-jobs/job_mock_001\"\n}",
+          "cookie": []
+        },
+        {
+          "name": "submit-missing-key",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              },
+              {
+                "key": "x-mock-response-name",
+                "value": "REPLACE_WITH_EXAMPLE_NAME",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/fetch-jobs",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"symbols\": [\n    \"AAPL\"\n  ],\n  \"last_n\": 1,\n  \"refresh\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "Bad Request",
+          "code": 400,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/problem+json"
+            }
+          ],
+          "body": "{\n  \"type\": \"about:blank\",\n  \"title\": \"missing_idempotency_key\",\n  \"status\": 400,\n  \"detail\": \"Idempotency-Key is required\",\n  \"instance\": \"/api/v1/fetch-jobs\",\n  \"code\": \"missing_idempotency_key\",\n  \"request_id\": \"req_mock_001\",\n  \"retryable\": false\n}",
+          "cookie": []
+        },
+        {
+          "name": "submit-conflict",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              },
+              {
+                "key": "x-mock-response-name",
+                "value": "REPLACE_WITH_EXAMPLE_NAME",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/fetch-jobs",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"symbols\": [\n    \"AAPL\"\n  ],\n  \"last_n\": 1,\n  \"refresh\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "Conflict",
+          "code": 409,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/problem+json"
+            }
+          ],
+          "body": "{\n  \"type\": \"about:blank\",\n  \"title\": \"idempotency_conflict\",\n  \"status\": 409,\n  \"detail\": \"Same key was used with a different request\",\n  \"instance\": \"/api/v1/fetch-jobs\",\n  \"code\": \"idempotency_conflict\",\n  \"request_id\": \"req_mock_001\",\n  \"retryable\": false\n}",
+          "cookie": []
+        },
+        {
+          "name": "submit-invalid",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              },
+              {
+                "key": "x-mock-response-name",
+                "value": "REPLACE_WITH_EXAMPLE_NAME",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/fetch-jobs",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"symbols\": [\n    \"AAPL\"\n  ],\n  \"last_n\": 1,\n  \"refresh\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "Unprocessable Content",
+          "code": 422,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/problem+json"
+            }
+          ],
+          "body": "{\n  \"type\": \"about:blank\",\n  \"title\": \"invalid_request\",\n  \"status\": 422,\n  \"detail\": \"last_n must be between 1 and 20\",\n  \"instance\": \"/api/v1/fetch-jobs\",\n  \"code\": \"invalid_request\",\n  \"request_id\": \"req_mock_001\",\n  \"retryable\": false\n}",
+          "cookie": []
+        },
+        {
+          "name": "submit-queue-full",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              },
+              {
+                "key": "x-mock-response-name",
+                "value": "REPLACE_WITH_EXAMPLE_NAME",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/fetch-jobs",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"symbols\": [\n    \"AAPL\"\n  ],\n  \"last_n\": 1,\n  \"refresh\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "Too Many Requests",
+          "code": 429,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/problem+json"
+            },
+            {
+              "key": "Retry-After",
+              "value": "10"
+            }
+          ],
+          "body": "{\n  \"type\": \"about:blank\",\n  \"title\": \"queue_full\",\n  \"status\": 429,\n  \"detail\": \"Pending job limit reached\",\n  \"instance\": \"/api/v1/fetch-jobs\",\n  \"code\": \"queue_full\",\n  \"request_id\": \"req_mock_001\",\n  \"retryable\": true\n}",
+          "cookie": []
+        }
+      ]
+    },
+    {
+      "name": "03 Poll job",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-mock-response-name",
+            "value": "REPLACE_WITH_EXAMPLE_NAME",
+            "disabled": true
+          }
+        ],
+        "url": "{{baseUrl}}/api/v1/fetch-jobs/{{jobId}}"
+      },
+      "response": [
+        {
+          "name": "job-queued",
+          "originalRequest": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-mock-response-name",
+                "value": "REPLACE_WITH_EXAMPLE_NAME",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/fetch-jobs/{{jobId}}"
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"job_id\": \"job_mock_001\",\n  \"status\": \"queued\",\n  \"attempt\": 0,\n  \"submitted_at\": \"2026-09-21T08:00:00Z\",\n  \"started_at\": null,\n  \"finished_at\": null,\n  \"deadline\": null,\n  \"progress\": {\n    \"symbols_total\": 1,\n    \"symbols_finished\": 0\n  },\n  \"summary\": {\n    \"downloaded\": 0,\n    \"cached\": 0,\n    \"failed\": 0\n  },\n  \"results\": []\n}",
+          "cookie": []
+        },
+        {
+          "name": "job-running",
+          "originalRequest": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-mock-response-name",
+                "value": "REPLACE_WITH_EXAMPLE_NAME",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/fetch-jobs/{{jobId}}"
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"job_id\": \"job_mock_001\",\n  \"status\": \"running\",\n  \"attempt\": 1,\n  \"submitted_at\": \"2026-09-21T08:00:00Z\",\n  \"started_at\": \"2026-09-21T08:00:00Z\",\n  \"finished_at\": null,\n  \"deadline\": null,\n  \"progress\": {\n    \"symbols_total\": 1,\n    \"symbols_finished\": 0\n  },\n  \"summary\": {\n    \"downloaded\": 0,\n    \"cached\": 0,\n    \"failed\": 0\n  },\n  \"results\": []\n}",
+          "cookie": []
+        },
+        {
+          "name": "job-succeeded",
+          "originalRequest": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-mock-response-name",
+                "value": "REPLACE_WITH_EXAMPLE_NAME",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/fetch-jobs/{{jobId}}"
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"job_id\": \"job_mock_001\",\n  \"status\": \"succeeded\",\n  \"attempt\": 1,\n  \"submitted_at\": \"2026-09-21T08:00:00Z\",\n  \"started_at\": \"2026-09-21T08:00:00Z\",\n  \"finished_at\": \"2026-09-21T08:00:00Z\",\n  \"deadline\": null,\n  \"progress\": {\n    \"symbols_total\": 1,\n    \"symbols_finished\": 1\n  },\n  \"summary\": {\n    \"downloaded\": 1,\n    \"cached\": 0,\n    \"failed\": 0\n  },\n  \"results\": [\n    {\n      \"market\": \"US\",\n      \"symbol\": \"AAPL\",\n      \"display_name\": \"MOCK issuer\",\n      \"status\": \"succeeded\",\n      \"report_ids\": [\n        \"mock_report_001\"\n      ],\n      \"items\": [\n        {\n          \"report_id\": \"mock_report_001\",\n          \"source_id\": \"mock-source-001\",\n          \"status\": \"downloaded\",\n          \"artifact_id\": \"mock_artifact_001\",\n          \"error\": null\n        }\n      ],\n      \"coverage\": {\n        \"requested\": 1,\n        \"selected\": 1,\n        \"total_groups\": 1,\n        \"exhausted\": true,\n        \"truncated\": false\n      },\n      \"warnings\": [],\n      \"error\": null\n    }\n  ]\n}",
+          "cookie": []
+        },
+        {
+          "name": "job-partial-unknown-period",
+          "originalRequest": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-mock-response-name",
+                "value": "REPLACE_WITH_EXAMPLE_NAME",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/fetch-jobs/{{jobId}}"
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"job_id\": \"job_mock_001\",\n  \"status\": \"partial\",\n  \"attempt\": 1,\n  \"submitted_at\": \"2026-09-21T08:00:00Z\",\n  \"started_at\": \"2026-09-21T08:00:00Z\",\n  \"finished_at\": \"2026-09-21T08:00:00Z\",\n  \"deadline\": null,\n  \"progress\": {\n    \"symbols_total\": 1,\n    \"symbols_finished\": 1\n  },\n  \"summary\": {\n    \"downloaded\": 1,\n    \"cached\": 0,\n    \"failed\": 0\n  },\n  \"results\": [\n    {\n      \"market\": \"US\",\n      \"symbol\": \"AAPL\",\n      \"display_name\": \"MOCK issuer\",\n      \"status\": \"partial\",\n      \"report_ids\": [\n        \"mock_report_001\"\n      ],\n      \"items\": [\n        {\n          \"report_id\": \"mock_report_001\",\n          \"source_id\": \"mock-source-001\",\n          \"status\": \"downloaded\",\n          \"artifact_id\": \"mock_artifact_001\",\n          \"error\": null\n        }\n      ],\n      \"coverage\": {\n        \"requested\": 1,\n        \"selected\": 1,\n        \"total_groups\": 1,\n        \"exhausted\": true,\n        \"truncated\": false\n      },\n      \"warnings\": [\n        \"Mock: report period unknown; file is available\"\n      ],\n      \"error\": null\n    }\n  ]\n}",
+          "cookie": []
+        },
+        {
+          "name": "job-failed",
+          "originalRequest": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-mock-response-name",
+                "value": "REPLACE_WITH_EXAMPLE_NAME",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/fetch-jobs/{{jobId}}"
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"job_id\": \"job_mock_001\",\n  \"status\": \"failed\",\n  \"attempt\": 1,\n  \"submitted_at\": \"2026-09-21T08:00:00Z\",\n  \"started_at\": \"2026-09-21T08:00:00Z\",\n  \"finished_at\": \"2026-09-21T08:00:00Z\",\n  \"deadline\": null,\n  \"progress\": {\n    \"symbols_total\": 1,\n    \"symbols_finished\": 1\n  },\n  \"summary\": {\n    \"downloaded\": 0,\n    \"cached\": 0,\n    \"failed\": 1\n  },\n  \"results\": [\n    {\n      \"market\": \"US\",\n      \"symbol\": \"AAPL\",\n      \"display_name\": \"MOCK issuer\",\n      \"status\": \"failed\",\n      \"report_ids\": [],\n      \"items\": [\n        {\n          \"report_id\": \"mock_report_001\",\n          \"source_id\": \"mock-source-001\",\n          \"status\": \"failed\",\n          \"artifact_id\": null,\n          \"error\": {\n            \"code\": \"source_unavailable\",\n            \"retryable\": true\n          }\n        }\n      ],\n      \"coverage\": {\n        \"requested\": 1,\n        \"selected\": 1,\n        \"total_groups\": 1,\n        \"exhausted\": true,\n        \"truncated\": false\n      },\n      \"warnings\": [],\n      \"error\": null\n    }\n  ]\n}",
+          "cookie": []
+        },
+        {
+          "name": "job-no-reports",
+          "originalRequest": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-mock-response-name",
+                "value": "REPLACE_WITH_EXAMPLE_NAME",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/fetch-jobs/{{jobId}}"
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"job_id\": \"job_mock_001\",\n  \"status\": \"succeeded\",\n  \"attempt\": 1,\n  \"submitted_at\": \"2026-09-21T08:00:00Z\",\n  \"started_at\": \"2026-09-21T08:00:00Z\",\n  \"finished_at\": \"2026-09-21T08:00:00Z\",\n  \"deadline\": null,\n  \"progress\": {\n    \"symbols_total\": 1,\n    \"symbols_finished\": 1\n  },\n  \"summary\": {\n    \"downloaded\": 0,\n    \"cached\": 0,\n    \"failed\": 0\n  },\n  \"results\": [\n    {\n      \"market\": \"US\",\n      \"symbol\": \"AAPL\",\n      \"display_name\": \"MOCK issuer\",\n      \"status\": \"no_reports\",\n      \"report_ids\": [],\n      \"items\": [],\n      \"coverage\": {\n        \"requested\": 1,\n        \"selected\": 0,\n        \"total_groups\": 0,\n        \"exhausted\": true,\n        \"truncated\": false\n      },\n      \"warnings\": [],\n      \"error\": {\n        \"code\": \"no_reports\",\n        \"retryable\": false\n      }\n    }\n  ]\n}",
+          "cookie": []
+        }
+      ]
+    },
+    {
+      "name": "04 List archive",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-mock-response-name",
+            "value": "REPLACE_WITH_EXAMPLE_NAME",
+            "disabled": true
+          }
+        ],
+        "url": "{{baseUrl}}/api/v1/reports?limit=20"
+      },
+      "response": [
+        {
+          "name": "reports-one",
+          "originalRequest": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-mock-response-name",
+                "value": "REPLACE_WITH_EXAMPLE_NAME",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/reports?limit=20"
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"items\": [\n    {\n      \"report_id\": \"mock_report_001\",\n      \"market\": \"US\",\n      \"symbol\": \"AAPL\",\n      \"source_id\": \"mock-source-001\",\n      \"source_url\": null,\n      \"title\": \"MOCK REPORT\",\n      \"doc_type\": \"10-Q\",\n      \"source_form\": \"10-Q\",\n      \"report_period\": \"2026-06-27\",\n      \"period_source\": \"source_field\",\n      \"filing_date\": \"2026-07-31\",\n      \"language\": \"en\",\n      \"is_amendment\": false,\n      \"revision_of\": null,\n      \"status\": \"done\",\n      \"warnings\": [],\n      \"issuer_id\": null,\n      \"artifact_id\": \"mock_artifact_001\",\n      \"sha256\": \"9584ecef8355462bc7101543d38251629931fef21a926df548a64690f9799596\",\n      \"bytes\": 78,\n      \"fetched_at\": \"2026-09-21T08:00:00Z\",\n      \"download_url\": \"/api/v1/reports/mock_report_001/file\"\n    }\n  ],\n  \"next_cursor\": null\n}",
+          "cookie": []
+        },
+        {
+          "name": "reports-empty",
+          "originalRequest": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-mock-response-name",
+                "value": "REPLACE_WITH_EXAMPLE_NAME",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/reports?limit=20"
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"items\": [],\n  \"next_cursor\": null\n}",
+          "cookie": []
+        }
+      ]
+    },
+    {
+      "name": "05 Report metadata",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-mock-response-name",
+            "value": "REPLACE_WITH_EXAMPLE_NAME",
+            "disabled": true
+          }
+        ],
+        "url": "{{baseUrl}}/api/v1/reports/{{reportId}}"
+      },
+      "response": [
+        {
+          "name": "report-detail",
+          "originalRequest": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-mock-response-name",
+                "value": "REPLACE_WITH_EXAMPLE_NAME",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/reports/{{reportId}}"
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"report_id\": \"mock_report_001\",\n  \"market\": \"US\",\n  \"symbol\": \"AAPL\",\n  \"source_id\": \"mock-source-001\",\n  \"source_url\": null,\n  \"title\": \"MOCK REPORT\",\n  \"doc_type\": \"10-Q\",\n  \"source_form\": \"10-Q\",\n  \"report_period\": \"2026-06-27\",\n  \"period_source\": \"source_field\",\n  \"filing_date\": \"2026-07-31\",\n  \"language\": \"en\",\n  \"is_amendment\": false,\n  \"revision_of\": null,\n  \"status\": \"done\",\n  \"current_artifact_id\": \"mock_artifact_001\",\n  \"warnings\": [],\n  \"artifacts\": [\n    {\n      \"artifact_id\": \"mock_artifact_001\",\n      \"sha256\": \"9584ecef8355462bc7101543d38251629931fef21a926df548a64690f9799596\",\n      \"bytes\": 78,\n      \"media_type\": \"text/html\",\n      \"fetched_at\": \"2026-09-21T08:00:00Z\",\n      \"state\": \"ready\",\n      \"is_current\": true\n    }\n  ]\n}",
+          "cookie": []
+        },
+        {
+          "name": "report-detail-unknown-period",
+          "originalRequest": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-mock-response-name",
+                "value": "REPLACE_WITH_EXAMPLE_NAME",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/reports/{{reportId}}"
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"report_id\": \"mock_report_001\",\n  \"market\": \"US\",\n  \"symbol\": \"AAPL\",\n  \"source_id\": \"mock-source-001\",\n  \"source_url\": null,\n  \"title\": \"MOCK REPORT\",\n  \"doc_type\": \"10-Q\",\n  \"source_form\": \"10-Q\",\n  \"report_period\": null,\n  \"period_source\": \"unknown\",\n  \"filing_date\": \"2026-07-31\",\n  \"language\": \"en\",\n  \"is_amendment\": false,\n  \"revision_of\": null,\n  \"status\": \"done\",\n  \"current_artifact_id\": \"mock_artifact_001\",\n  \"warnings\": [\n    \"Mock: report period unknown\"\n  ],\n  \"artifacts\": [\n    {\n      \"artifact_id\": \"mock_artifact_001\",\n      \"sha256\": \"9584ecef8355462bc7101543d38251629931fef21a926df548a64690f9799596\",\n      \"bytes\": 78,\n      \"media_type\": \"text/html\",\n      \"fetched_at\": \"2026-09-21T08:00:00Z\",\n      \"state\": \"ready\",\n      \"is_current\": true\n    }\n  ]\n}",
+          "cookie": []
+        }
+      ]
+    },
+    {
+      "name": "06 Download file",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-mock-response-name",
+            "value": "REPLACE_WITH_EXAMPLE_NAME",
+            "disabled": true
+          }
+        ],
+        "url": "{{baseUrl}}/api/v1/reports/{{reportId}}/file"
+      },
+      "response": [
+        {
+          "name": "file-html",
+          "originalRequest": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-mock-response-name",
+                "value": "REPLACE_WITH_EXAMPLE_NAME",
+                "disabled": true
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/reports/{{reportId}}/file"
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "text/html"
+            },
+            {
+              "key": "Content-Disposition",
+              "value": "attachment; filename=\"mock-report.html\""
+            },
+            {
+              "key": "ETag",
+              "value": "\"9584ecef8355462bc7101543d38251629931fef21a926df548a64690f9799596\""
+            },
+            {
+              "key": "X-Content-Type-Options",
+              "value": "nosniff"
+            }
+          ],
+          "body": "<html><body><h1>MOCK REPORT</h1><p>Integration fixture only.</p></body></html>",
+          "cookie": []
+        }
+      ]
+    }
+  ]
+}

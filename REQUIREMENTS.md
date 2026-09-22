@@ -37,7 +37,7 @@
 | 报告期 / 公告日 | 报告期 = 财期期末日；公告日 = 源站披露日。两者不可互换；报告期未知时保留 null |
 | 完整全文 / 摘要 / 通知 | 由 `document_role` 区分；只有可确认的完整版本（含完整修订版）可被选为归档对象 |
 | report_id / artifact_id | 报告的持久身份（绑定来源去重键）/ 同一来源文件某次内容版本的身份 |
-| period_source | 报告期可信级别：`source_field`（来源字段）> `explicit_title`（标题明确期末日）> `unknown` |
+| period_source | 报告期可信级别：`source_field`（来源字段）与 `explicit_title`（标题明确期末日）、`document`（从已归档原文提取的明确期末日，仅补未知、绝不覆盖已可信期）为可信来源；`unknown` 为未知。`filing_date` 仅可作为文件名回退，绝不作 report_period 来源 |
 
 ## 4. 功能需求（FR）
 

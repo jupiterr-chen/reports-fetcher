@@ -21,6 +21,9 @@ from reports_fetcher.models import (
 
 logger = logging.getLogger("reports_fetcher.selection")
 
+# 报告期未知的质量警告文案（核心层据此在原文富化后重建，避免陈旧警告）
+PERIOD_UNKNOWN_HINT = "报告期未知（period_source=unknown）"
+
 _FULL_ROLES = (DocumentRole.FULL_REPORT, DocumentRole.AMENDMENT_FULL)
 
 
@@ -124,7 +127,7 @@ def select_reports(candidates: list[Report], query: ReportQuery,
     unknown = [r for r in result.selected if r.report_period is None]
     if unknown:
         result.warnings.append(
-            f"{len(unknown)} 份报告报告期未知（period_source=unknown），已置于结果末尾")
+            f"{len(unknown)} 份报告{PERIOD_UNKNOWN_HINT}，已置于结果末尾")
     if result.total_groups > query.last_n:
         # 正常取最新 N 份的截取属说明性信息，不降级状态（PHASE1_REVIEW T6）
         result.notices.append(

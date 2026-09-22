@@ -5,7 +5,7 @@
 ## 当前状态（2026-09-21）——**一期 v1.0.1（评审修复后）**
 
 - I0–I6 全部交付：三市场 CLI 归档（I3 起可用）、可靠性硬化（I4）、HTTP 服务（I5）、验收发布（I6）。
-- PHASE1_REVIEW T1–T7 已全部修复（[docs/PHASE1_FIXES.md](docs/PHASE1_FIXES.md)，320 单测全绿）；目标服务器部署冒烟按 [DEPLOY.md](DEPLOY.md) 待执行。
+- PHASE1_REVIEW T1–T7 已修复；独立复审 178 项定向测试通过，v1.0.1（76fee13）已部署至 chen@192.168.1.150:/home/chen/dev/reports-fetcher，三市场 HTTP 抓取、缓存、幂等及重启读取通过，记录见 [DEPLOY.md](DEPLOY.md)。服务仅发布宿主 127.0.0.1:8000。
 - 验收留证：[docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)（ARCHITECTURE §10 逐条核对 + 冒烟矩阵 + 性能基线 + 偏差记录）；使用文档：[README.md](README.md)。
 - **后续**：内容提取/指标/基本面分析按 [ANALYSIS_ROADMAP.md](ANALYSIS_ROADMAP.md) 另立计划（二期+）；backlog 见 ITERATION_PLAN §7。
 - CLI：`SEC_UA_EMAIL=<邮箱> docker compose run --rm cli fetch AAPL 600519 0700.HK --last 4`；HTTP：`docker compose up -d serve`（127.0.0.1:8000）。
