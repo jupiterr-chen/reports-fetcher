@@ -150,7 +150,7 @@ Content-Type: application/json
   报告期未知等信息在 `coverage.notices` 聚合至多一次，不逐条进入 `warnings`。
   若 HK 归档 PDF 能在抓取后提取明确期末日，`period_source` 会是 `document`
   且不再给出未知期警告（见 `report_period`/`period_source` 枚举）。
-- `coverage` 为开放字典，权威字段名（v1.0.2 `core.py`）为
+- `coverage` 为开放字典，权威字段名（v1.0.3 `core.py`）为
   `requested / selected / total_groups / exhausted / truncated /
   searched_from / searched_to / insufficient_history / notices`；
   **没有 `returned` 字段**。mock 中 `searched_from/searched_to` 恒为 `null`
@@ -253,7 +253,7 @@ Content-Type: application/json
 | 503 | 存储/执行器不可用（`store_unavailable`）；入队失败不会返回“已接受” |
 | 500 | 未预期内部错误（`internal_error`），不返回堆栈/路径 |
 
-> 注：`HTTP_API.md` §6 的表格把“无效 JSON”列为 400，但 v1.0.2 运行实现
+> 注：`HTTP_API.md` §6 的表格把“无效 JSON”列为 400，但 v1.0.3 运行实现
 > （FastAPI 校验）实际返回 **422 `invalid_request`**；本套件与修正后的
 > `openapi.json` 以运行实现为准，按 422 处理。已在 mock 与测试中体现。
 

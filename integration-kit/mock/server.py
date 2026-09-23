@@ -208,7 +208,7 @@ def _period_source(market: str, doc_type: str) -> str:
 
 def _coverage(requested: int, selected: int, *, exhausted: bool = True,
               truncated: bool = False, notices=None) -> dict:
-    """Same keys as the authoritative FetchResult.coverage (v1.0.2 core)."""
+    """Same keys as the authoritative FetchResult.coverage (v1.0.3 core)."""
     return {
         "requested": requested,
         "selected": selected,

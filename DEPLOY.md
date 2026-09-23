@@ -2,11 +2,11 @@
 
 ## 当前状态
 
-2026-09-22 17:17（Asia/Shanghai）：**v1.0.2 已完成复审、升级部署及目标机 HTTP 冒烟，服务运行中。** 部署提交为 `7f5fbadadc63d1b026019e72c0a2dc9f5edfb40e`，镜像为 `reports-fetcher:7f5fbadadc63d1b026019e72c0a2dc9f5edfb40e`。v1.0.1 的首次上线记录作为历史保留在下文。
+2026-09-23 10:55（Asia/Shanghai）：**v1.0.3 已完成评审、升级部署及目标机 HTTP 验收，服务运行中。** 部署提交为 `26c648d53133eec646677ca95acafe8a6165c960`，镜像为 `reports-fetcher:26c648d53133eec646677ca95acafe8a6165c960`。v1.0.1 与 v1.0.2 上线记录作为历史保留在下文。
 
 服务目录：`/home/chen/dev/reports-fetcher`；宿主入口：`http://127.0.0.1:8000`，仅服务器本机监听；其他机器通过 SSH 隧道调用（下文有命令）。本次采用回环本地模式，未配置应用令牌或对外发布端口。
 
-最初审查 `709bb72`（v1.0.0）未通过，因 T1–T7 暂缓部署；用户提交修复后，本次复审通过并继续执行原有部署授权。以下保留首次检查和阻断记录；本次执行凭证见文末“最终上线记录”。
+最初审查 `709bb72`（v1.0.0）未通过，因 T1–T7 暂缓部署；修复后从 v1.0.1 起持续按 release 目录升级。下文按版本保留环境检查、阻断与上线凭证，最新记录为文末 v1.0.3。
 
 ## 已执行：首次环境预检查（部署前）
 
@@ -305,4 +305,66 @@ sh /home/chen/dev/reports-fetcher/compose-release.sh restart serve
 2. v1.0.1 的固定入口末尾残留一行不可达的 `SH`，位于 `exec docker compose ...` 之后，未影响历史运行。v1.0.2 入口已移除该残行；旧入口按完整 SHA 原样保留用于审计和回滚参考。
 3. 首次验收脚本在全部断言通过后，因输出 JSON 使用 tuple key 导致格式化异常；仅影响测试结果打印，不影响服务或数据。修正验收脚本后以同一幂等任务重新执行并完整通过。
 
-生产服务当前为 v1.0.2，未修改其他项目，未执行递归删除、移动或权限变更。旧 release、镜像和启动入口备份均保留；如需回滚，先确认数据库兼容，再将稳定入口恢复为旧 SHA 并执行 `up -d --no-deps serve`。
+截至 v1.0.2 上线记录完成时，生产服务为 v1.0.2。该次未修改其他项目，未执行递归删除、移动或权限变更；旧 release、镜像和启动入口备份均保留。
+
+## v1.0.3 升级上线记录（2026-09-23）
+
+### 范围与发布门禁
+
+本次升级交付 RF-HK-QTR-DEFAULT-001：HK 省略 `forms_by_market` 时默认使用 `ANNUAL/INTERIM/QTR-HK`；季度业绩存在即按报告期参与统一选择，不存在则正常跳过。ANNUAL/INTERIM 在混合选择前使用 Store 可信期回填与冷库有界原文判期，避免已知期季度公告挤掉报告期尚未富化的完整报告。近期完整报告判期失败会形成可追溯 warning/partial，不再静默遗漏。
+
+- 发布提交及标签：`26c648d53133eec646677ca95acafe8a6165c960` / `v1.0.3`，均已推送。
+- Docker 定向测试：**92 passed，7.82 秒**。
+- Docker 全量测试：**369 passed，2 warnings，26.39 秒**；警告为 FastAPI TestClient 依赖弃用提示。
+- integration-kit：**37 tests OK，27.824 秒**；两个超时用例产生预期 BrokenPipe 测试日志。
+- `git diff --check` 通过；目标镜像内 `reports-fetcher version` 与 Python 导入均返回 `1.0.3`。
+
+### 环境预检查、制品与切换
+
+升级前确认 SSH 可用，Docker 28.5.2、Compose v2.40.3 正常，目标分区约 40G 可用；v1.0.2 容器健康运行。新镜像构建和版本自检期间旧容器持续服务，完成自检后才切换。共享归档、SQLite、配置和环境文件继续复用，没有输出凭据。
+
+| 项目 | 实际值 |
+|---|---|
+| 首次切换 | 2026-09-23 10:50:34 +08:00 |
+| 配置修正及重启 | 2026-09-23 10:53:15 +08:00 |
+| 最终重启验收 | 2026-09-23 10:55:06 +08:00 |
+| 源码 release | `/home/chen/dev/reports-fetcher/releases/26c648d53133eec646677ca95acafe8a6165c960` |
+| 上传包 | `releases/reports-fetcher-26c648d53133eec646677ca95acafe8a6165c960.tar`，1146880 bytes |
+| 包 SHA-256 | `138958a3fc783b238ed3429832464be4e64a64722951e3a5604261f75a44dbb1`（本地与远端一致） |
+| 镜像 | `reports-fetcher:26c648d53133eec646677ca95acafe8a6165c960` |
+| 镜像 ID | `sha256:259c3e450ef13eb5f4d35c757d25de1af1761252c3e22bbeadb7ae039d363143` |
+| 固定运维入口 | `/home/chen/dev/reports-fetcher/compose-release.sh`，已固定 v1.0.3 SHA |
+| v1.0.2 回滚入口 | `/home/chen/dev/reports-fetcher/compose-release-7f5fbadadc63d1b026019e72c0a2dc9f5edfb40e.sh` |
+| 生产配置备份 | `/home/chen/dev/reports-fetcher/shared/config.toml.v1.0.2` |
+| 端口 / 网络 | 宿主 `127.0.0.1:8000`；Compose 网络内仍为 `http://serve:8000` |
+
+目标机原生构建约 28 秒。稳定入口切换后使用以下命令启动与复验：
+
+```sh
+sh /home/chen/dev/reports-fetcher/compose-release.sh config --quiet
+sh /home/chen/dev/reports-fetcher/compose-release.sh up -d --no-deps serve
+curl --fail --silent --show-error http://127.0.0.1:8000/health/ready
+sh /home/chen/dev/reports-fetcher/compose-release.sh restart serve
+```
+
+### 生产定向验收
+
+在服务容器内通过真实 HTTP 调用生产 API。请求只传 `symbols=["0700.HK"]`、`last_n=4`、`refresh=false`，明确省略 `forms_by_market`，验证生产生效默认值。任务 `job_0ac7d301d72c401d892c` 终态 succeeded，`downloaded=0`、`cached=4`、`failed=0`，证券 warnings 为空。
+
+| 顺序 | 类型 | 报告期 | period_source | report_id | bytes |
+|---:|---|---|---|---|---:|
+| 1 | INTERIM | 2026-06-30 | document | `2727be0c6689aabad5a3` | 5451089 |
+| 2 | QTR-HK | 2026-03-31 | explicit_title | `fcb8cfe60ceca32501c1` | 865653 |
+| 3 | ANNUAL | 2025-12-31 | document | `5f543428c4cc35b8f8b3` | 4428270 |
+| 4 | QTR-HK | 2025-09-30 | explicit_title | `edecd9471ec07ac3e2e4` | 958746 |
+
+同一幂等键重放返回 200 和相同 job_id。中报文件 ETag 为 SHA-256 `6231374bc3d7bd104fcebb7735f9692050b55be32fa0f34d7d7f20478efa71f1`，匹配 `If-None-Match` 返回 304。最终受控重启后再次执行同一验收脚本，任务、四份元数据和文件仍可读，顺序、字节数、ETag 与缓存统计不变。`/openapi.json` 版本为 1.0.3，并已回存 `docs/integration/openapi.production.json`。
+
+### 部署中发现并处理的问题
+
+1. 首次切换后，省略 forms 的 0700.HK 请求仍返回四份年报/中报。原因是生产沿用的 `shared/config.toml` 显式配置 `HK = ["ANNUAL", "INTERIM"]`，覆盖了 v1.0.3 代码默认值。原配置先复制为 `shared/config.toml.v1.0.2`（SHA-256 与修改前一致），再把唯一 HK 行更新为 `HK = ["ANNUAL", "INTERIM", "QTR-HK"]`；`docker compose config --quiet` 通过后重启，重新使用新幂等键验收通过。此问题只影响部署配置，未修改归档或数据库。
+2. 第一次镜像自检误用了不存在的 `--version` 参数；项目 CLI 使用 `version` 子命令。该命令在容器切换前失败，没有影响运行服务；改用 `python -m reports_fetcher version` 后返回 1.0.3。
+3. 初版验收脚本从报告详情顶层读取 `bytes`，而详情契约将其放在当前 `artifacts[]` 中。业务断言（四份顺序、任务状态和缓存统计）此前已经通过；脚本按契约改为读取当前 artifact 后，文件长度、ETag、304、幂等和重启复验全部通过。
+4. 服务切换和两次受控重启的启动窗口内出现短暂 connection reset；带上限重试的 ready 探测随后返回 200，日志显示应用正常 startup，最终容器重启计数 0。
+
+生产服务当前为 v1.0.3。旧 release、镜像、固定入口和原生产配置备份均保留；未执行递归删除、移动或权限变更，也未修改其他项目。回滚前应先确认 SQLite schema 兼容，再恢复 v1.0.2 固定入口与配置备份并执行 `up -d --no-deps serve`。

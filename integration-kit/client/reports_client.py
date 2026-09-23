@@ -1,4 +1,4 @@
-"""Standard-library HTTP client for the reports-fetcher API (v1.0.2 contract).
+"""Standard-library HTTP client for the reports-fetcher API (v1.0.3 contract).
 
 Usage::
 
