@@ -278,11 +278,13 @@ class TestListReports:
         assert by_title["中期報告 2026"].source_url == (
             "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0825/"
             "2026082500557_c.pdf")
-        # 默认类型不触发 t1=10000 检索（prefix.do 的 resolve 请求除外）
+        # v1.0.3（RF-HK-QTR-DEFAULT-001）：默认类型含 QTR-HK → 两类检索都发起。
+        # 该 fixture 的 40000 页无 [季度業績] 行，QTR-HK 候选为 0 属正常。
         search_calls = [r for r in session.requests
                         if r[1].startswith(SEARCH_URL_PREFIX)]
-        assert len(search_calls) == 1
+        assert len(search_calls) == 2
         assert "t1code=40000" in search_calls[0][1]
+        assert "t1code=10000" in search_calls[1][1]
         assert re.search(r"from=\d{8}&to=\d{8}", search_calls[0][1])
 
     def test_00700_selection_last_4(self):
@@ -413,7 +415,9 @@ class TestListReports:
                     if r[1].startswith(SEARCH_URL_PREFIX)]
 
     def test_over_limit_splits_year_windows(self):
-        # 真实结构上替换总数标记：1500 > 站点单页上限 1000 → 按年切窗
+        # 真实结构上替换总数标记：1500 > 站点单页上限 1000 → 按年切窗。
+        # 显式 ANNUAL/INTERIM 保持单检索，隔离验证切窗行为本身（v1.0.3
+        # 默认 forms 含 QTR-HK 会同时发起 t1=10000 检索并各自切窗）。
         raw = _raw("search_00700_40000_3y.raw.html").replace("共有 9 紀錄",
                                                              "共有 1500 紀錄")
         adapter, session = _make_adapter([
@@ -421,7 +425,8 @@ class TestListReports:
             (SEARCH_URL_PREFIX, _html_response(raw)),
         ])
         resolved = _resolve_00700(adapter)
-        query = ReportQuery(last_n=4, max_lookback_years=2,
+        query = ReportQuery(last_n=4, forms=["ANNUAL", "INTERIM"],
+                            max_lookback_years=2,
                             max_discovery_requests=100)
         adapter.list_reports(resolved, query)
         urls = [r[1] for r in session.requests

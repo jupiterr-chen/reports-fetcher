@@ -31,3 +31,6 @@ Thumbs.db
 
 # I6 验收运行产物（矩阵样本归档，不进版本库）
 /reports-acceptance/
+
+# v1.0.3 隔离验证归档（RF-HK-QTR-DEFAULT-001 真实验证产物）
+/reports-v103-verify*/

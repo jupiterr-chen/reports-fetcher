@@ -30,7 +30,9 @@ max_discovery_requests_per_symbol = 100
 
 [fetch.default_forms]
 CN = ["Q1", "H1", "Q3", "FY"]
-HK = ["ANNUAL", "INTERIM"]
+# v1.0.3：HK 默认纳入自愿披露的季度业绩（QTR-HK）；发行人没有季度材料时
+# 正常跳过（不算错误、不产生缺季报警告）。显式 forms 仍可只取完整报告或只取季度。
+HK = ["ANNUAL", "INTERIM", "QTR-HK"]
 US = ["10-Q", "10-K", "20-F"]
 
 [server]

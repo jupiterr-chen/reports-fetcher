@@ -5,7 +5,7 @@
 | 市场 | 来源 | 支持类型 |
 |---|---|---|
 | CN 沪深 | 巨潮资讯 | Q1 / H1 / Q3 / FY（修订版归入基础类型） |
-| HK | 港交所披露易 | ANNUAL / INTERIM；QTR-HK 需显式请求（自愿披露） |
+| HK | 港交所披露易 | ANNUAL / INTERIM / QTR-HK（季度业绩自愿披露，v1.0.3 起默认纳入；发行人没有季度材料时正常跳过，不算错误） |
 | US | SEC EDGAR | 10-Q / 10-K / 20-F（含 /A 修订版） |
 
 核心数据质量规则：**未知即 null**——报告期解析不出就置空并附警告，绝不用公告日、12-31 或财季惯例猜造日期（港股非日历年结公司是真实场景）。
@@ -23,7 +23,8 @@ SEC_UA_EMAIL=you@example.com docker compose run --rm cli \
 # 3) 归档结果（宿主机 ./reports/）
 #    reports/US/AAPL/2026-06-27__10-Q__aapl-20260627.htm__<report_id>__<artifact_id>.html
 #    reports/CN/600519/2026-06-30__H1__贵州茅台2026年半年度报告__....pdf
-#    reports/HK/00700/unknown__ANNUAL__2025 年報__....pdf（港股标题无期末日证据，见已知限制）
+#    reports/HK/00700/2025-12-31__ANNUAL__2025 年報__....pdf
+#    （港股标题只有年份；混合选择会在最终截断前从已归档/预取的 PDF 原文提取期末日，见已知限制）
 ```
 
 国内网络可覆盖 `BASE_IMAGE` / `PIP_INDEX_URL`（默认本地 `python:3.12-slim` + 清华 pip 源）。
@@ -122,8 +123,9 @@ SEC_UA_EMAIL=you@example.com docker compose run --rm probe   # 来源契约探�
 
 ## 已知限制
 
-- 6-K 业绩附件、40-F、北交所不在一期范围（显式报 `unsupported_form` / `unsupported_market_segment`）；QTR-HK 需显式请求且仅覆盖 `[季度業績]` 公告。
-- 港股报告标题（单年 `2025 年報` 与跨年 `2024/25 年報` 均含）只有年份语义、无期末日证据 → `unknown` + 警告（不猜测，铁律）；仅业绩公告（`截至…止`）有明确期末日。归档后若能从 HK 年报/中期 PDF **原文**提取明确期末日，则以 `period_source=document` 补写（仅补未知，绝不覆盖可信期）；提取失败/歧义非致命。`filing_date` 只作文件名回退，绝不作报告期来源。
+- 6-K 业绩附件、40-F、北交所不在一期范围（显式报 `unsupported_form` / `unsupported_market_segment`）；QTR-HK 仅覆盖 `[季度業績]` 公告，v1.0.3 起属于 HK 默认类型（`--forms` / `forms_by_market` 仍可只取完整报告或只取季度业绩）。
+- 港股报告标题（单年 `2025 年報` 与跨年 `2024/25 年報` 均含）只有年份语义、无期末日证据 → `unknown`（不猜测，铁律）；仅业绩公告（`截至…止`）有明确期末日。若能从 HK 年报/中期 PDF **原文**提取明确期末日，则以 `period_source=document` 补写（仅补未知，绝不覆盖可信期）；提取失败/歧义非致命。`filing_date` 只作文件名回退，绝不作报告期来源。
+- **HK 混合选择两阶段（v1.0.3）**：默认类型含 QTR-HK 后，为避免已知期的季度公告把未知期的年报/中报挤出 `last_n`，最终截断前先按去重键回填库内可信报告期，再对冷库未知 ANNUAL/INTERIM 候选**有界预取**（每类型至多 `last_n` 个，按公告时间限定工作量）提取原文期末日；入选候选复用预取文件不重复下载，未入选临时文件任务结束前清理（预取活动在 `coverage.notices` 可追溯，不计入 downloaded/cached/failed）。`list` 预览不下载原文，冷库下混合排序仍偏向已知期候选，归档后与 fetch 一致。
 - 文件下载 `Content-Disposition` 使用可读且确定的名称 `market_symbol_doc_type_报告期|公告日|unknown_report_id.ext`（含 `filename*` UTF-8；历史版本追加 artifact_id），不使用中文标题前缀。
 - 披露易 `prefix.do` 为去零前缀搜索，个别代码（如 00011）在其索引中缺席 → `symbol_not_found`（源站数据现实，已留 fixture）。
 - SEC HTML 主文档为 Inline XBRL，一期不恢复图片/CSS 等离线资源。

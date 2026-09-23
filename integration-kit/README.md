@@ -1,11 +1,11 @@
 # reports-fetcher 本地联调套件（integration-kit）
 
 这是一个**可独立复制、完全离线**的联调套件：用本地 mock 服务实现 reports-fetcher
-v1.0.2 的 HTTP 契约，配套中文接口文档、可运行示例客户端和可执行的契约测试。
+v1.0.3 的 HTTP 契约，配套中文接口文档、可运行示例客户端和可执行的契约测试。
 开发 AI agent 无需 Postman、无需联网、无需接触生产，即可把 HTTP 客户端开发完，
 最后只改一个 base URL 就能切到生产。
 
-- 契约基准：`HTTP_API.md` + v1.0.2 运行实现；机器可读定义见
+- 契约基准：`HTTP_API.md` + v1.0.3 运行实现；机器可读定义见
   [openapi.json](openapi.json)（已修正自动 OpenAPI 的缺口）。
 - 套件只依赖 Python 标准库与 `python:3.12-slim` 镜像，不 import 主项目、
   不访问 SEC/HKEX/CNINFO 或任何外网。
@@ -118,6 +118,11 @@ docker compose -f integration-kit/compose.yaml stop
   输入顺序）；`symbols` 1–50 项、单项 ≤32 字符；`forms_by_market` 做支持列表校验
   （HK 的 `QTR-HK` 仅可显式请求，不在默认值内）；未知字段、空 symbols、
   `last_n` 越界、非 JSON 媒体类型、非法 JSON 会被拒绝。
+- **HK 季度语义（v1.0.3）**：mock 的 HK 生效默认值含 `QTR-HK`。发行人多样性
+  是确定性规则：HK 代码末位为偶数的 mock 发行人有季度业绩（如 `0700.HK`），
+  奇数没有（如 `0005.HK`）——无季度发行人默认请求正常降级（无 QTR-HK、无警告），
+  显式 `{"HK":["QTR-HK"]}` 对其是正常 `no_reports`。这是文档化的 mock 简化，
+  不是交易所数据。
 - **coverage 字段对齐权威实现**：使用 `requested/selected/total_groups/exhausted/
   truncated/searched_from/searched_to/insufficient_history/notices`；mock 不进行
   真实检索窗口，故 `searched_from/searched_to` 恒为 `null`（已文档化）。
@@ -128,8 +133,9 @@ docker compose -f integration-kit/compose.yaml stop
   `filename*=UTF-8''`；历史版本追 artifact_id。mock 只保留单一 artifact，
   历史版本命名分支不在此演示。
 - **period_source**：权威取值为 `source_field | explicit_title | document | unknown`；
-  mock 只产生 `source_field`/`explicit_title`/`unknown`（不解析 PDF 原文，故不产生
-  `document`；该值仅在真实服务的 HK 归档后富化出现）。
+  mock 产生 `source_field`/`explicit_title`（HK 的 QTR-HK 用 `explicit_title`，
+  对齐真实服务）/`unknown`（不解析 PDF 原文，故不产生 `document`；该值仅在
+  真实服务的 HK 归档后富化出现）。
 - **可选鉴权（简化）**：设 `MOCK_API_TOKEN` 后 `/api/v1/*` 需要
   `Authorization: Bearer <token>`（默认不启用，即本地无鉴权模式）。
 - 因此：mock 用于验证**客户端行为**（轮询、幂等、错误处理、文件字节与校验），

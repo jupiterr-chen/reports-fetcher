@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "reports-fetcher",
-    "version": "1.0.2",
-    "description": "Corrected, self-contained HTTP contract for reports-fetcher v1.0.2. This file fixes the gaps in the auto-generated schema: the mandatory Idempotency-Key request header, the 200 idempotent-replay response, RFC 9457 problem+json error responses, and the binary file response. It is the authoritative machine-readable contract for the local mock and for production. Mock-only routes (/__mock/*) and the X-Mock-Scenario header are intentionally NOT part of this contract.",
+    "version": "1.0.3",
+    "description": "Corrected, self-contained HTTP contract for reports-fetcher v1.0.3. This file fixes the gaps in the auto-generated schema: the mandatory Idempotency-Key request header, the 200 idempotent-replay response, RFC 9457 problem+json error responses, and the binary file response. It is the authoritative machine-readable contract for the local mock and for production. v1.0.3: HK default forms now include the voluntary quarterly announcements (QTR-HK); issuers without quarterly disclosure simply skip them (no error), and an explicit HK=[\"QTR-HK\"] request for such an issuer is a normal no_reports result. Mock-only routes (/__mock/*) and the X-Mock-Scenario header are intentionally NOT part of this contract.",
     "contact": {
       "name": "reports-fetcher integration kit"
     }
@@ -412,6 +412,7 @@
           "last_n": {"type": "integer", "minimum": 1, "maximum": 20,
                      "default": 4},
           "forms_by_market": {
+            "description": "Explicit per-market base-form whitelist. Omitted markets use the effective defaults: CN [Q1,H1,Q3,FY], HK [ANNUAL,INTERIM,QTR-HK] (v1.0.3: HK quarterly announcements are included by default; issuers without voluntary quarterly disclosure just skip them - no error, no missing-quarter warning), US [10-Q,10-K,20-F]. Values must be non-empty and within the supported list; empty arrays and unknown forms are rejected with 422. Omitted forms are filled with the effective defaults before the idempotency request hash is compared.",
             "type": ["object", "null"],
             "additionalProperties": {
               "type": "array",

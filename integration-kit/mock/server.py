@@ -3,7 +3,7 @@
 
 Standard library only: no pip install, no dependency on the main project, and
 no outbound network requests. It implements the public HTTP contract of
-reports-fetcher v1.0.2 closely enough to develop and test an HTTP client
+reports-fetcher v1.0.3 closely enough to develop and test an HTTP client
 completely offline, plus a small mock-only control surface under ``/__mock/*``
 that MUST never be sent to production.
 
@@ -41,16 +41,26 @@ TERMINAL_STATUSES = ("succeeded", "partial", "failed")
 # Supported forms = what an explicit forms_by_market entry may contain.
 SUPPORTED_FORMS = {
     "CN": {"Q1", "H1", "Q3", "FY"},
-    "HK": {"ANNUAL", "INTERIM", "QTR-HK"},   # QTR-HK explicit only
+    "HK": {"ANNUAL", "INTERIM", "QTR-HK"},
     "US": {"10-Q", "10-K", "20-F"},
 }
-# Effective defaults, matching config.fetch.default_forms (v1.0.2):
-# HK default is ANNUAL/INTERIM; QTR-HK is NOT a default.
+# Effective defaults, matching config.fetch.default_forms (v1.0.3):
+# HK default now includes the voluntary quarterly announcements (QTR-HK).
+# An issuer without quarterly disclosures simply skips them (no error).
 DEFAULT_FORMS = {
     "CN": sorted(["Q1", "H1", "Q3", "FY"]),
-    "HK": sorted(["ANNUAL", "INTERIM"]),
+    "HK": sorted(["ANNUAL", "INTERIM", "QTR-HK"]),
     "US": sorted(["10-Q", "10-K", "20-F"]),
 }
+
+
+def _hk_has_quarterly(symbol: str) -> bool:
+    """Deterministic mock issuer diversity: an HK symbol whose last digit is
+    EVEN publishes voluntary quarterly results (e.g. 0700.HK -> yes, echoing
+    Tencent), ODD does not (e.g. 0005.HK -> no, echoing HSBC). This mirrors
+    the real market where HK quarterly disclosure is voluntary; it is a
+    documented mock simplification, not exchange data."""
+    return bool(symbol) and symbol[-1].isdigit() and int(symbol[-1]) % 2 == 0
 
 FIXTURE_FILES = {
     "html_en": ("mock_report_en.html", "text/html", "en"),
@@ -77,7 +87,7 @@ def _quarter_ends(count: int = 48) -> list[str]:
 _PERIODS = _quarter_ends()
 
 SCENARIO_INFO = {
-    "success": "All symbols succeed; each yields last_n usable report(s).",
+    "success": "All symbols succeed; each yields last_n usable report(s). HK issuers without voluntary quarterly disclosure just skip QTR-HK (symbol status stays succeeded); an explicit HK=[\"QTR-HK\"] request for such an issuer yields no_reports (a normal empty result).",
     "partial": "Each symbol yields usable file(s) plus a null report_period "
                "(period_source=unknown) warning; job status=partial.",
     "failed": "GET job returns HTTP 200 but job status=failed with "
@@ -186,8 +196,14 @@ def request_hash(canonical) -> str:
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
-def _period_source(market: str) -> str:
-    return "explicit_title" if market == "CN" else "source_field"
+def _period_source(market: str, doc_type: str) -> str:
+    """Mirror the real service: CN titles and HK quarterly announcements carry
+    an explicit period in the title; US reports use a source field."""
+    if market == "CN":
+        return "explicit_title"
+    if market == "HK" and doc_type == "QTR-HK":
+        return "explicit_title"
+    return "source_field"
 
 
 def _coverage(requested: int, selected: int, *, exhausted: bool = True,
@@ -219,21 +235,30 @@ def _fixture_for(market: str, language: str) -> dict:
     return FIXTURES["html_zh"] if language == "zh" else FIXTURES["html_en"]
 
 
-def _report_specs(scenario: str, market: str, last_n: int, forms):
-    market_forms = forms.get(market) or DEFAULT_FORMS[market]
+def _report_specs(scenario: str, market: str, symbol: str, last_n: int, forms):
+    market_forms = list(forms.get(market) or DEFAULT_FORMS[market])
+    if market == "HK" and not _hk_has_quarterly(symbol):
+        # Issuer does not publish voluntary quarterly results: the default
+        # query just skips QTR-HK (not an error). An explicit QTR-HK-only
+        # request then legitimately yields no matching reports.
+        market_forms = [f for f in market_forms if f != "QTR-HK"]
+    if not market_forms:
+        return []   # explicit form the issuer never discloses -> no_reports
     specs = []
     if scenario == "partial":
         for i in range(max(0, last_n - 1)):
             specs.append((market_forms[i % len(market_forms)],
                           _PERIODS[i],
-                          _period_source(market), []))
+                          _period_source(market, market_forms[i % len(market_forms)]),
+                          []))
         specs.append((market_forms[0], None, "unknown",
                       ["报告期未知（period_source=unknown）"]))
     else:  # success / slow
         for i in range(last_n):
             specs.append((market_forms[i % len(market_forms)],
                           _PERIODS[i],
-                          _period_source(market), []))
+                          _period_source(market, market_forms[i % len(market_forms)]),
+                          []))
     return specs
 
 
@@ -344,8 +369,19 @@ def _compute_terminal(state: MockState, job: dict):
     for market, symbol in job["symbols"]:
         items = []
         symbol_warnings: list[str] = []
-        for doc_type, period, period_source, warns in _report_specs(
-                scenario, market, last_n, job["forms"]):
+        specs = _report_specs(scenario, market, symbol, last_n, job["forms"])
+        if not specs:
+            # Normal empty terminal state (e.g. explicit QTR-HK for an issuer
+            # without voluntary quarterly disclosure) — not a failure.
+            results.append({
+                "market": market, "symbol": symbol, "display_name": None,
+                "status": "no_reports", "report_ids": [], "items": [],
+                "coverage": _coverage(last_n, 0, exhausted=True),
+                "warnings": ["no_matching_reports"],
+                "error": None,
+            })
+            continue
+        for doc_type, period, period_source, warns in specs:
             key = _logical_key(market, symbol, doc_type, period)
             report_id = "r_" + hashlib.sha1(key.encode()).hexdigest()[:12]
             report = state.reports.get(report_id)
@@ -738,7 +774,7 @@ DOCS_HTML = """<!doctype html>
 </style></head>
 <body>
 <h1>reports-fetcher local contract kit</h1>
-<p>This is a fully offline mock of the reports-fetcher v1.0.2 HTTP API.
+<p>This is a fully offline mock of the reports-fetcher v1.0.3 HTTP API.
 No CDN, no internet, no production calls. Corrected machine-readable contract:
 <a href="/openapi.json"><code>/openapi.json</code></a>.</p>
 <div class="note"><strong>Mock-only control surface:</strong>

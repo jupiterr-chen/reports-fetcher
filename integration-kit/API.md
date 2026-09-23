@@ -1,4 +1,4 @@
-# reports-fetcher HTTP 接口契约（v1.0.2，联调版）
+# reports-fetcher HTTP 接口契约（v1.0.3，联调版）
 
 本文档面向**调用方**，与本地 mock 和真实生产**同一套契约**。字段形状以运行实现
 （`reports_fetcher/api_models.py`、`reports_fetcher/api.py`、`reports_fetcher/jobs.py`）
@@ -42,7 +42,7 @@
   "last_n": 4,
   "forms_by_market": {
     "CN": ["Q1", "H1", "Q3", "FY"],
-    "HK": ["ANNUAL", "INTERIM"],
+    "HK": ["ANNUAL", "INTERIM", "QTR-HK"],
     "US": ["10-Q", "10-K", "20-F"]
   },
   "refresh": false
@@ -53,7 +53,7 @@
 |---|---|---|---|
 | `symbols` | string[] | — | 1–50 项，单项 ≤32 字符；规范化后去重合并 |
 | `last_n` | int | 4 | 1–20；是“最多 N 个逻辑报告组”，**不等于 N 个财季** |
-| `forms_by_market` | object\|null | 省略 | 键限 CN/HK/US；值非空且在支持列表内；空数组/未知类型 422 |
+| `forms_by_market` | object\|null | 省略 | 键限 CN/HK/US；值非空且在支持列表内；空数组/未知类型 422。省略时的生效默认：CN `Q1/H1/Q3/FY`、HK `ANNUAL/INTERIM/QTR-HK`（v1.0.3 起）、US `10-Q/10-K/20-F` |
 | `refresh` | bool | false | true 时重新验证/下载候选并保留旧版本 |
 
 提交期只做格式检查；联网解析在执行期进行。`symbols` 为空、`last_n` 越界、
@@ -155,6 +155,12 @@ Content-Type: application/json
   searched_from / searched_to / insufficient_history / notices`；
   **没有 `returned` 字段**。mock 中 `searched_from/searched_to` 恒为 `null`
   （不进行真实检索窗口），属于已文档化的简化，见 README §6。
+- **HK 季度语义（v1.0.3）**：省略 forms 时 HK 默认含 `QTR-HK`（自愿披露的季度业绩）。
+  发行人没有季度材料时正常跳过——不算错误、无“缺少季报”警告，年报/中报照常填满
+  `last_n`。显式 `{"HK":["ANNUAL","INTERIM"]}` 只取完整报告；显式
+  `{"HK":["QTR-HK"]}` 只取季度业绩，对无季度披露发行人是正常的
+  `no_reports`/`no_matching_reports` 结果（不是失败）。省略 forms 与显式
+  写出生效默认值视为同一请求；显式旧类型集合是不同请求（同键 409）。
 - `report_period` 可能为 `null`（未知即 null，禁止猜测），此时
   `period_source="unknown"` 且 `warnings` 给出说明；**这类报告仍可能有可用文件**。
   `period_source` 取值：`source_field | explicit_title | document | unknown`；

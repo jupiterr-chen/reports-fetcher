@@ -2,9 +2,9 @@
 
 | 项目 | 内容 |
 |---|---|
-| 版本 | v1.0（待确认） |
-| 日期 | 2026-09-20 |
-| 状态 | 待用户确认；确认后冻结为一期验收基线，变更走 [迭代计划](ITERATION_PLAN.md) §6 |
+| 版本 | v1.1（v1.0 基线 + v1.0.3 变更：HK 默认类型纳入 QTR-HK，见 FR-2/§7/§8） |
+| 日期 | 2026-09-20（v1.0）；2026-09-23（v1.1） |
+| 状态 | v1.0 已冻结为一期验收基线；v1.1 变更依据 [HK_QUARTERLY_DEFAULT_TASK.md](HK_QUARTERLY_DEFAULT_TASK.md)（P1），按 §6 变更控制记录 |
 | 关联 | [架构](ARCHITECTURE.md) · [详细设计](DESIGN.md) · [HTTP 契约](HTTP_API.md) · [迭代计划](ITERATION_PLAN.md) · [评审记录](REVIEW.md) |
 
 ---
@@ -51,7 +51,7 @@
 
 ### FR-2 报告发现
 
-- 三市场默认类型：CN `Q1/H1/Q3/FY`；HK `ANNUAL/INTERIM`；US `10-Q/10-K/20-F`（修订申报归入基础类型并保留 `source_form/is_amendment`）。
+- 三市场默认类型：CN `Q1/H1/Q3/FY`；HK `ANNUAL/INTERIM/QTR-HK`（v1.0.3 起；季度业绩为自愿披露，发行人没有时正常跳过——不算错误、不产生"缺少季报"质量警告，仍返回可用年报/中报；显式 forms 仍可只取 `ANNUAL/INTERIM` 或只取 `QTR-HK`，后者对无季度披露发行人是正常 `no_reports`）；US `10-Q/10-K/20-F`（修订申报归入基础类型并保留 `source_form/is_amendment`）。
 - 分页与扩窗在有界预算内进行（默认回溯 ≤10 年、每证券发现请求 ≤100 次）；预算耗尽必须显式上报 `truncated`，不得伪装穷尽。
 - US 历史检索不能只依赖 `filings.recent`，按需读取 `filings.files` 指向的历史文件。
 - 发现失败（网络/风控/契约变化）与"无匹配报告"是不同结果；后者是正常终态（`no_reports`）。
@@ -116,10 +116,11 @@
 
 - 财报内容提取、指标计算、基本面分析（归 ANALYSIS_ROADMAP 后续阶段）
 - 6-K 业绩附件识别、40-F、北交所
-- QTR-HK 默认启用（fixture 验证通过后仅作为显式可选类型）
 - Webhook、任务取消、多租户、分布式队列、多实例部署
 - 内置定时调度（由调用方或外部 cron 承担）
 - 公网服务化与原文再分发；自动清理历史任务与旧版本
+
+（原"QTR-HK 默认启用（仅作为显式可选类型）"一项已于 v1.0.3 完成并从负面清单移除：fixture 与生产验证后 QTR-HK 纳入 HK 默认类型，见 FR-2 与 [HK_QUARTERLY_DEFAULT_TASK.md](HK_QUARTERLY_DEFAULT_TASK.md)。）
 
 ## 8. 评审意见处理结论
 
@@ -139,7 +140,7 @@ REVIEW.md §2/§3 的技术修正**全部采纳**（v1.1 ARCHITECTURE/DESIGN 已
 
 **本方补充澄清（新增决策，非 REVIEW 原文）**：
 
-1. **QTR-HK 启用门槛**：I3 用 fixture 验证通过前，显式请求一律 `unsupported_form`（HTTP 422 / CLI 报错）；验证通过后作为非默认显式类型启用。
+1. **QTR-HK 启用门槛**：I3 用 fixture 验证通过前，显式请求一律 `unsupported_form`（HTTP 422 / CLI 报错）；验证通过后作为非默认显式类型启用。**v1.0.3（2026-09-23）更新**：冷/热库混合选择修复（[HK_QUARTERLY_DEFAULT_TASK.md](HK_QUARTERLY_DEFAULT_TASK.md)）完成后，QTR-HK 纳入 HK 默认类型，语义见 FR-2；该门槛决策就此闭合。
 2. **HTTP 归入一期但排期最后（I5）**：这是交付顺序决策，不改变其"一期必须"属性；若确认时希望更早，可与 I4 对调。
 3. **工期估算不在本文承诺**：v1.0 的 2.5 人日已撤回；I0（来源契约验证）完成后在迭代计划中按迭代给出。
 

@@ -1,6 +1,6 @@
 {
   "kit": "reports-fetcher-local-mock-kit",
-  "contract_version": "1.0.2",
+  "contract_version": "1.0.3",
   "api_prefix": "/api/v1",
   "default_mock_base_url": "http://127.0.0.1:18765",
   "mock_only": {
@@ -13,12 +13,18 @@
   "terminal_statuses": ["succeeded", "partial", "failed"],
   "job_status_progression": ["queued", "running", "succeeded|partial|failed"],
   "public_response_contract": {
-    "source": "authoritative FetchResult.coverage / JobSymbolOut (v1.0.2 core)",
+    "source": "authoritative FetchResult.coverage / JobSymbolOut (v1.0.3 core)",
     "coverage_fields": [
       "requested", "selected", "total_groups", "exhausted", "truncated",
       "searched_from", "searched_to", "insufficient_history", "notices"
     ],
     "note": "coverage is an open dict. These are the authoritative field names; the mock implements them for success, failed and no_reports. 'returned' is NOT part of the contract and must not be relied on. Mock-specific omissions (e.g. searched_from/to are always null because the mock does not search a window) are intentional and documented in README/API."
+  },
+  "hk_quarterly_semantics": {
+    "default_forms_HK": ["ANNUAL", "INTERIM", "QTR-HK"],
+    "note": "v1.0.3: HK default forms include the voluntary quarterly announcements (QTR-HK). An issuer without quarterly disclosures simply skips them: no error and no missing-quarter warning; ANNUAL/INTERIM still fill last_n. An explicit HK=[\"QTR-HK\"] request for such an issuer is a normal no_reports result.",
+    "mock_issuer_rule": "Mock issuer diversity is deterministic: an HK symbol whose last digit is EVEN has quarterly results (0700.HK), ODD does not (0005.HK). This is a documented mock simplification.",
+    "effective_defaults_note": "Omitted forms_by_market is filled with these defaults before the request hash is compared, so omitting forms equals the explicit new defaults; an explicit older set like HK=[\"ANNUAL\",\"INTERIM\"] is a different request (same key -> 409)."
   },
   "scenarios": [
     {
@@ -207,6 +213,40 @@
         "poll with an overall timeout shorter than the slow budget"
       ],
       "expect": "client stops in bounded time and reports a timeout; no infinite loop"
+    },
+    {
+      "id": "hk_default_quarterly_issuer",
+      "steps": [
+        "POST {\"symbols\":[\"0700.HK\"],\"last_n\":4} (no forms)",
+        "poll terminal",
+        "GET /api/v1/reports?market=HK&symbol=00700",
+        "download every report_id"
+      ],
+      "expect": "succeeded; 4 items mixing ANNUAL/INTERIM/QTR-HK; QTR-HK period_source=explicit_title; files downloadable"
+    },
+    {
+      "id": "hk_default_no_quarterly_issuer",
+      "steps": [
+        "POST {\"symbols\":[\"0005.HK\"],\"last_n\":4} (no forms)",
+        "poll terminal"
+      ],
+      "expect": "succeeded; 4 ANNUAL/INTERIM items; no QTR-HK; no missing-quarter warning"
+    },
+    {
+      "id": "hk_explicit_qtr_only_no_results",
+      "steps": [
+        "POST {\"symbols\":[\"0005.HK\"],\"last_n\":2,\"forms_by_market\":{\"HK\":[\"QTR-HK\"]}}",
+        "poll terminal"
+      ],
+      "expect": "job succeeded; symbol status=no_reports with no_matching_reports; not failed"
+    },
+    {
+      "id": "hk_explicit_qtr_only_quarterly_issuer",
+      "steps": [
+        "POST {\"symbols\":[\"0700.HK\"],\"last_n\":2,\"forms_by_market\":{\"HK\":[\"QTR-HK\"]}}",
+        "poll terminal"
+      ],
+      "expect": "succeeded; 2 QTR-HK reports with period_source=explicit_title"
     }
   ],
   "file_notes": {

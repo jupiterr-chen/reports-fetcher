@@ -39,7 +39,10 @@ _RETRYABLE_CODES = {"source_unavailable", "source_rate_limited",
                     "job_deadline_exceeded"}
 _MARKET_FORMS = {
     "CN": {"Q1", "H1", "Q3", "FY"},
-    "HK": {"ANNUAL", "INTERIM", "QTR-HK"},   # QTR-HK 显式可选（I3 验证启用）
+    # QTR-HK v1.0.3 起纳入默认生效值（RF-HK-QTR-DEFAULT-001）；显式
+    # {"HK": ["ANNUAL","INTERIM"]} 仍可只取完整报告，{"HK": ["QTR-HK"]}
+    # 只取季度业绩。省略 HK 时 request_hash 使用含 QTR-HK 的生效默认值。
+    "HK": {"ANNUAL", "INTERIM", "QTR-HK"},
     "US": {"10-Q", "10-K", "20-F"},
 }
 

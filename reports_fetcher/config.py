@@ -33,7 +33,9 @@ class FetchConfig:
     max_discovery_requests_per_symbol: int = 100
     default_forms: dict[str, list[str]] = field(default_factory=lambda: {
         "CN": ["Q1", "H1", "Q3", "FY"],
-        "HK": ["ANNUAL", "INTERIM"],
+        # v1.0.3（RF-HK-QTR-DEFAULT-001）：HK 默认纳入自愿披露的季度业绩
+        # （QTR-HK）；发行人没有季度材料时正常跳过，不算错误。
+        "HK": ["ANNUAL", "INTERIM", "QTR-HK"],
         "US": ["10-Q", "10-K", "20-F"],
     })
 

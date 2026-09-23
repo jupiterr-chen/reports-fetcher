@@ -2,8 +2,9 @@
 
 一句话：输入 A股/港股/美股代码 → 获取最新 N 份定期财报原文 → 按 市场/代码/财报日期 归档 + SQLite 索引；CLI + HTTP 双入口，Docker 为主力运行方式。
 
-## 当前状态（2026-09-22）——**一期 v1.0.2（生产联调修复后）**
+## 当前状态（2026-09-23）——**代码 v1.0.3（HK 季度默认任务已实现，未部署生产）**
 
+- **v1.0.3（RF-HK-QTR-DEFAULT-001）已实现并通过发布验收，待部署**：HK 默认类型改为 `ANNUAL/INTERIM/QTR-HK`；混合选择两阶段（Store 可信期回填 + 冷库有界判期预取）修复冷/热库一致性，任务书见 [HK_QUARTERLY_DEFAULT_TASK.md](HK_QUARTERLY_DEFAULT_TASK.md)。生产（192.168.1.150）仍运行 v1.0.2；发布及部署结果见 [DEPLOY.md](DEPLOY.md)。
 - I0–I6 全部交付：三市场 CLI 归档（I3 起可用）、可靠性硬化（I4）、HTTP 服务（I5）、验收发布（I6）。
 - PHASE1_REVIEW T1–T7 已修复；生产联调反馈中的 HK 正文报告期提取/缓存回填、下载名、warning 范围、任务初始进度及 integration-kit 已在 v1.0.2（7f5fbad）修复。Docker 全量 353 项、integration-kit 33 项通过；v1.0.2 已部署至 chen@192.168.1.150:/home/chen/dev/reports-fetcher，并完成 0700.HK 缓存回填、幂等、文件下载/304 及重启读取验证，记录见 [DEPLOY.md](DEPLOY.md)。服务仅发布宿主 127.0.0.1:8000。
 - 验收留证：[docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)（ARCHITECTURE §10 逐条核对 + 冒烟矩阵 + 性能基线 + 偏差记录）；使用文档：[README.md](README.md)。
@@ -18,7 +19,7 @@
 | `REQUIREMENTS.md` | 一期需求基线（FR/NFR）与验收口径 |
 | `DESIGN.md`（v1.3） | 详细设计；§6/§7/§8 为已实测验证的来源契约 |
 | `HTTP_API.md` | 一期 HTTP 契约（I5 落地） |
-| `HK_QUARTERLY_DEFAULT_TASK.md` | v1.0.3 P1 任务：HK 默认季度业绩与混合选择冷/热库一致性 |
+| `HK_QUARTERLY_DEFAULT_TASK.md` | v1.0.3 任务书（✅ 已实现 2026-09-23）：HK 默认季度业绩与混合选择冷/热库一致性 |
 | `docs/SOURCE_VERIFICATION.md` | I0 验证简报：三市场契约结论、DoD 核对、估算依据 |
 | `ARCHITECTURE.md` / `REVIEW.md` / `ANALYSIS_ROADMAP.md` | 架构、评审历史、后续分析路线（二期+，勿混入一期） |
 

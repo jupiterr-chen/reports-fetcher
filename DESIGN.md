@@ -2,9 +2,9 @@
 
 | 项目 | 内容 |
 |---|---|
-| 版本 | v1.3（I0 契约回填） |
-| 日期 | 2026-09-20 |
-| 状态 | 设计阶段；三市场来源契约已于 I0 实测验证并回填（样本见 tests/fixtures/，结论见 docs/SOURCE_VERIFICATION.md），尚无实现代码 |
+| 版本 | v1.4（v1.3 + RF-HK-QTR-DEFAULT-001：HK 默认季度类型与混合选择两阶段） |
+| 日期 | 2026-09-20（v1.3）；2026-09-23（v1.4） |
+| 状态 | 实现中；三市场来源契约已于 I0 实测验证（样本见 tests/fixtures/，结论见 docs/SOURCE_VERIFICATION.md） |
 | 上游 | [ARCHITECTURE.md](./ARCHITECTURE.md)、[REQUIREMENTS.md](./REQUIREMENTS.md) |
 | 配套 | [ITERATION_PLAN.md](./ITERATION_PLAN.md)、[HTTP_API.md](./HTTP_API.md)、[REVIEW.md](./REVIEW.md)、[ANALYSIS_ROADMAP.md](./ANALYSIS_ROADMAP.md) |
 
@@ -96,6 +96,20 @@ class BaseMarketAdapter:
 
 发现过程按公告日分页时，不能在看到 N 条后就假定已取得最新 N 个报告期。必须完成声明检索窗口的分页，再排序；窗口不足 N 时有界扩窗。默认最多回溯 10 年、每证券 100 次发现请求（均可配置，包含检索/验证请求）；预算到限即 truncated，不宣称完整。未来按日期区间补取可单独演进。
 
+### 5.1 混合选择两阶段数据流（v1.4，RF-HK-QTR-DEFAULT-001）
+
+HK 默认类型为 `ANNUAL/INTERIM/QTR-HK` 后，选择面临的数据现实是：QTR-HK 标题含明确期末日（发现阶段即有可信 `report_period`），而年报/中报标题常只有年份（发现阶段 `null + unknown`）。若直接混合排序，"已知期在前、未知期置后"的规则会让 `last_n` 被季度公告占满（生产已复现，冷库/热库皆然——库内富化的报告期发生在选择之后）。因此在 `select_reports()` **之前**插入两阶段准备（`core.FetchService._prepare_selection_periods`）：
+
+1. **阶段 A（所有市场）**：按 `(market, symbol, source_id)` 从 Store **只读回填**库内可信报告期（`report_period` 非空且 `period_source != unknown`；未知不覆盖）。热库由此与冷库获得一致的选择输入；`list` 预览只做这一步（不下载原文，冷库预览的混合排序仍偏向已知期，属已文档化的预览边界）。
+2. **阶段 B（仅 HK ANNUAL/INTERIM 仍未知者）**：
+   - 已归档候选（manifest done + 当前 artifact ready）：从**本地已校验 PDF** 提取明确期末日（不触网），`enrich_report_period` 仅补未知；
+   - 未归档候选：按公告时间倒序**每类型预选至多 `last_n` 个**（公告时间只限定工作量，绝不写成报告期、不改变 `period_source`），经传输层下载为已校验临时文件后提取期末日；提取成功即写回候选（`period_source=document`）并 upsert 落库——**未入选候选同样落库**（discovered 行带期），下次运行阶段 A 直接回填，不再重复预取。
+3. 预取临时文件：入选则由 `_run_download` **复用提交**（不重复下载）；未入选/缓存短路由 fetch 收尾统一清理；崩溃遗留的 `.tmp/*.part` 由 Store 恢复清扫收敛。预取不登记 archive_intents，Store 仍是唯一归档提交方。
+4. 预取语义可追溯：预取数量/失败/时限跳过以说明性 notice 记入 `coverage.notices`，不计入 `downloaded/cached/failed`，预取失败不阻止其他类型（候选保留未知期参与选择）。**但判期最终失败不得静默漏掉近期完整报告**：预取后报告期仍未知的 ANNUAL/INTERIM 候选在统一选择中被置后，若已知期候选已满足 `last_n` 即被排除——此时以公告时间作保守代理，凡失败候选公告时间不早于最旧入选报告者，视为**可能遗漏最新完整报告**的质量缺口，记入 `warnings` 并使该证券 `partial`（其他可用类型继续返回，不产生 failed item 伪装）；更早的失败候选仍仅记 notice、不降级。
+5. 边界：非日历年结公司（如 0016 六月年结）由原文提取真实期末（能提取则 `document`，否则 `null+unknown` 置后）；下载有界性为每类型 ≤`last_n`；选择函数本身不变（不修改 `_group_order_key()`，不用 `filing_date` 冒充 `report_period`）。
+
+验收基线：0700.HK 省略 forms、`last_n=4`，冷库与缓存重跑都返回 `2026-06-30 INTERIM、2026-03-31 QTR-HK、2025-12-31 ANNUAL、2025-09-30 QTR-HK`（report_id 顺序一致）。
+
 ## 6. CN：巨潮适配器（I0 已验证契约，2026-09-20）
 
 | 步骤 | 已验证请求与关键字段 |
@@ -138,7 +152,7 @@ class BaseMarketAdapter:
 
 - 单页返回全部结果：10 年窗口 24 条一次返回；站点显示上限 1000 条（页面配置 `ViewMoreRecords`），超限场景按年切窗，不做 load-more 模拟；
 - **免 Cookie/免预热可直接深链检索**（全新会话消融验证通过）；偶发 TLS 握手层重置（网络抖动），显式重试即可恢复——重试属传输层必选项；
-- **QTR-HK 可行**：`t1=10000` + `title=業績` 可召回季度业绩公告，标题含中文数字明确期末日（”截至二零二六年三月三十一日止三個月業績公佈”）→ 可作为显式类型启用（默认仍不启用，见 REQUIREMENTS §8 决策 1）；
+- **QTR-HK 可行且默认启用**：`t1=10000` + `title=業績` 可召回季度业绩公告，标题含中文数字明确期末日（”截至二零二六年三月三十一日止三個月業績公佈”）→ v1.0.3 起纳入 HK 默认类型（REQUIREMENTS v1.1 FR-2；无季度披露的发行人正常跳过，混合选择两阶段见 §5.1）；
 - 标题形态（I3 实测 2026-09-21；**PHASE1_REVIEW T5 修正规则**）：样本中观察到的形态有 `中期報告 2026`、`2025 年報`、**匯豐年份在前的 `2026年中期業績報告(附僱員股份計劃)`、`2016年報及賬目(…)`**、**非日历年结公司（0016，六月年结）的跨年标签 `2024/25 年報`、`2025/26 中期報告`**。**通用规则：样本中的日历年结公司形态不能推广为期末推导依据——单年标签与跨年标签都只有年份语义、无期末日证据，一律 `report_period=null + period_source=unknown + 警告`（不按 12-31/06-30 拼接）；仅"明确期末日"（截至…止，如业绩公告标题）设期（explicit_title）**。跨年判定以任何 `YYYY/NN` 斜杠年份为准；JSONP 包装实际形态为 `callback( … );`（尾部带分号）；
 - 子类别映射（**修复期回归补充，2026-09-21**）：除精确键（`[年報]`/`[中期/半年度報告]`/`[季度業績]`、纯 ESG 排除）外，旧年份存在**合并子类别** `[年報 / 環境、社會及管治資料/報告]`（騰訊 2017–2021 实测）——按包含关系判定：含"年報"→ANNUAL、含"中期報告/半年度報告"→INTERIM；纯 ESG 子类别仍精确排除；
 - PDF 实测 magic `%PDF-1.7`。
@@ -166,7 +180,7 @@ reportDate 非空且合法时作为期末；缺失则 null。filingDate 仍为�
 | 来源 | doc_type | 日期来源 |
 |---|---|---|
 | CN | Q1 / H1 / Q3 / FY | 明确标题年份和类型；异常则未知 |
-| HK | ANNUAL / INTERIM / QTR-HK（非默认） | 明确期末日或可靠来源字段，禁止财年猜测 |
+| HK | ANNUAL / INTERIM / QTR-HK（v1.0.3 起均默认） | 明确期末日或可靠来源字段；ANNUAL/INTERIM 可经 §5.1 两阶段判期（document），禁止财年猜测 |
 | US | 10-Q / 10-K / 20-F | 来源 reportDate；未知留空 |
 
 `period.py` 提供日期校验和中文年份数字转换等通用函数；市场标题规则放适配器或市场专用模块。繁简体需要实际字符/转换覆盖，不能在注释说兼容而正则只含”個”。
@@ -298,7 +312,7 @@ max_discovery_requests_per_symbol = 100
 
 [fetch.default_forms]
 CN = ["Q1", "H1", "Q3", "FY"]
-HK = ["ANNUAL", "INTERIM"]
+HK = ["ANNUAL", "INTERIM", "QTR-HK"]   # v1.0.3：默认纳入自愿季度业绩
 US = ["10-Q", "10-K", "20-F"]
 
 [server]
@@ -320,7 +334,7 @@ CLI 显式参数 > 环境覆盖 > 配置文件 > 默认值；argparse 未提供�
 
 ## 14. 调度和持久化任务
 
-FetchService：规范化/分组 → 逐市场串行 resolve/list → 统一选择 → upsert 报告 → 校验缓存/下载 → Store 归档 → 汇总。单文件失败继续该证券其他文件，单证券失败继续整个市场。
+FetchService：规范化/分组 → 逐市场串行 resolve/list → 报告期两阶段准备（§5.1）→ 统一选择 → upsert 报告 → 校验缓存/下载（判期预取文件复用提交）→ Store 归档 → 汇总。单文件失败继续该证券其他文件，单证券失败继续整个市场；预取临时文件在任务收尾统一清理（未入选不产生孤儿文件/脏 done）。
 
 JobService 在事务中校验幂等键并保存生效请求与 queued 状态，提交后返回 202。任务执行器有界领取一个任务，再调用 FetchService；持久化每证券/文件进度，HTTP 查询不等待任务完成。数据库中的 queued 是唯一待办依据，内存信号只作唤醒。
 
@@ -339,7 +353,7 @@ JobService 在事务中校验幂等键并保存生效请求与 queued 状态，�
 | 模块 | 必须验证的行为 |
 |---|---|
 | symbol | HK 所有别名归一；US 来源类股符号；非法值、显式市场冲突及北交所不支持 |
-| selection/period | 同期不同类型、完整修订/通知区分、语言回退、非日历财年、未知日期保留、forms 生效 |
+| selection/period | 同期不同类型、完整修订/通知区分、语言回退、非日历财年、未知日期保留、forms 生效；混合选择两阶段（冷/热库一致、有界预取、未入选候选清理，A1–A10） |
 | adapters | CN/HK 真实 fixture、分页/扩窗与截断；HK 数组嵌套；SEC recent+历史文件及数组长度校验 |
 | transport | resolve/list/重试/重定向都经过预算；无长度超大流、压缩长度、200 错误 HTML、超时与 429 |
 | store | 同名来源不覆盖、内容版本保留、丢失/损坏文件修复、每个提交中断点恢复、线程连接与目录锁 |

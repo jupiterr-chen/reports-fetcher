@@ -95,6 +95,42 @@ class TestSubmit:
         submitted = _submit(jobs, forms={"HK": ["QTR-HK"]})  # 显式可选类型
         assert submitted.created
 
+    def test_hk_effective_default_includes_qtr_hk_and_idempotency(self,
+                                                                  tmp_path):
+        """A11：省略 forms 的 request hash 使用 v1.0.3 新默认（含 QTR-HK）；
+        显式旧类型（ANNUAL/INTERIM）仍可提交并稳定重放。"""
+        jobs, store, *_ = _harness(tmp_path)
+
+        def _effective(job_id):
+            row = store.connection().execute(
+                "SELECT effective_request_json FROM jobs WHERE job_id=?",
+                (job_id,)).fetchone()
+            return json.loads(row["effective_request_json"])
+
+        omitted = _submit(jobs, key="hk-def-1", symbols=["0700.HK"])
+        assert _effective(omitted.job_id)["forms_by_market"]["HK"] == \
+            ["ANNUAL", "INTERIM", "QTR-HK"]
+        # 省略 forms 与显式新默认视为同一请求（同键重放）
+        explicit_default = _submit(jobs, key="hk-def-2",
+                                   forms={"HK": ["ANNUAL", "INTERIM",
+                                                 "QTR-HK"]},
+                                   symbols=["0700.HK"])
+        replay = _submit(jobs, key="hk-def-2", symbols=["0700.HK"])
+        assert replay.created is False
+        assert replay.job_id == explicit_default.job_id
+        # 显式旧类型（不含 QTR-HK）是不同的有效请求，可提交并稳定重放
+        old_forms = _submit(jobs, key="hk-old-1",
+                            forms={"HK": ["ANNUAL", "INTERIM"]},
+                            symbols=["0700.HK"])
+        assert _effective(old_forms.job_id)["forms_by_market"]["HK"] == \
+            ["ANNUAL", "INTERIM"]
+        old_replay = _submit(jobs, key="hk-old-1",
+                             forms={"HK": ["ANNUAL", "INTERIM"]},
+                             symbols=["0700.HK"])
+        assert old_replay.created is False
+        assert old_replay.job_id == old_forms.job_id
+        assert old_forms.job_id != explicit_default.job_id
+
     def test_queue_limit(self, tmp_path):
         config = _config(max_pending_jobs=1)
         jobs, *_ = _harness(tmp_path, config=config)

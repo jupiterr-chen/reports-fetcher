@@ -372,15 +372,87 @@ class KitTestCase(unittest.TestCase):
         self.assertEqual(first["job_id"], replay["job_id"])
 
         defaults = {"CN": ["FY", "H1", "Q1", "Q3"],
-                    "HK": ["ANNUAL", "INTERIM"],
+                    "HK": ["ANNUAL", "INTERIM", "QTR-HK"],
                     "US": ["10-K", "10-Q", "20-F"]}
         _, omitted = self.client.submit_job(["AAPL"], last_n=1,
                                             idempotency_key="eff-2")
-        status, explicit = self.client.submit_job(
-            ["AAPL"], last_n=1, forms_by_market=defaults,
-            idempotency_key="eff-2")
+        status, explicit = self.client.submit_job(["AAPL"], last_n=1,
+                                                  forms_by_market=defaults,
+                                                  idempotency_key="eff-2")
         self.assertEqual(status, 202)
         self.assertEqual(omitted["job_id"], explicit["job_id"])
+
+    # ------------------------------------------------------------------ #
+    # HK quarterly default (v1.0.3): with/without quarterly + overrides
+    # ------------------------------------------------------------------ #
+
+    def test_hk_default_includes_quarterly_for_quarterly_issuer(self):
+        """0700.HK (mock issuer WITH quarterly): default forms mix ANNUAL,
+        INTERIM and QTR-HK in one job, mirroring the production sequence."""
+        _, accepted = self.client.submit_job(["0700.HK"], last_n=4,
+                                             idempotency_key="hk-qtr-1")
+        doc = self.client.wait_for_terminal(accepted["job_id"])
+        self.assertEqual(doc["status"], "succeeded", doc)
+        result = doc["results"][0]
+        self.assertEqual(result["status"], "succeeded")
+        self.assertEqual(len(result["report_ids"]), 4)
+        listed = self.client.list_reports(market="HK", symbol="00700",
+                                          limit=100)["items"]
+        doc_types = {item["doc_type"] for item in listed}
+        self.assertIn("QTR-HK", doc_types)
+        self.assertIn("ANNUAL", doc_types)
+        qtr = [item for item in listed if item["doc_type"] == "QTR-HK"]
+        self.assertTrue(qtr)
+        self.assertEqual(qtr[0]["period_source"], "explicit_title")
+        for report_id in result["report_ids"]:
+            blob = self.client.download_report_file(report_id)
+            self.assertEqual(blob["status"], 200)
+
+    def test_hk_default_skips_quarterly_for_issuer_without(self):
+        """0005.HK (mock issuer WITHOUT quarterly): default query degrades
+        normally — no QTR-HK, no error, no missing-quarter warning."""
+        _, accepted = self.client.submit_job(["0005.HK"], last_n=4,
+                                             idempotency_key="hk-noq-1")
+        doc = self.client.wait_for_terminal(accepted["job_id"])
+        self.assertEqual(doc["status"], "succeeded", doc)
+        result = doc["results"][0]
+        self.assertEqual(result["status"], "succeeded")
+        self.assertEqual(len(result["report_ids"]), 4)
+        self.assertFalse(result["warnings"])
+        listed = self.client.list_reports(market="HK", symbol="00005",
+                                          limit=100)["items"]
+        self.assertEqual(len(listed), 4)
+        self.assertTrue(all(item["doc_type"] in ("ANNUAL", "INTERIM")
+                            for item in listed))
+
+    def test_hk_explicit_quarterly_only_no_results_is_no_reports(self):
+        """Explicit HK=["QTR-HK"] for a non-quarterly issuer: a normal empty
+        result (succeeded + no_reports), never a disguised failure."""
+        _, accepted = self.client.submit_job(
+            ["0005.HK"], last_n=2,
+            forms_by_market={"HK": ["QTR-HK"]},
+            idempotency_key="hk-noq-2")
+        doc = self.client.wait_for_terminal(accepted["job_id"])
+        self.assertEqual(doc["status"], "succeeded", doc)
+        result = doc["results"][0]
+        self.assertEqual(result["status"], "no_reports")
+        self.assertEqual(result["report_ids"], [])
+        self.assertIn("no_matching_reports", result["warnings"])
+        self.assertIsNone(result["error"])
+
+    def test_hk_explicit_quarterly_only_for_quarterly_issuer(self):
+        _, accepted = self.client.submit_job(
+            ["0700.HK"], last_n=2,
+            forms_by_market={"HK": ["QTR-HK"]},
+            idempotency_key="hk-qtr-2")
+        doc = self.client.wait_for_terminal(accepted["job_id"])
+        self.assertEqual(doc["status"], "succeeded", doc)
+        result = doc["results"][0]
+        self.assertEqual(len(result["report_ids"]), 2)
+        for report_id in result["report_ids"]:
+            detail = self.client.get_report(report_id)
+            self.assertEqual(detail["doc_type"], "QTR-HK")
+            self.assertEqual(detail["period_source"], "explicit_title")
 
     def test_symbol_alias_dedupe_same_key_equivalence(self):
         _, first = self.client.submit_job(["AAPL"], last_n=2,

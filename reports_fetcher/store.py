@@ -751,6 +751,32 @@ class Store:
                 "WHERE market=? AND symbol=? AND status='done'",
                 (market, symbol))}
 
+    def archived_periods(self, market: str, symbol: str) -> dict[str, dict]:
+        """按 source_id 返回库内报告行（只读），供混合选择两阶段回填（T2）。
+
+        - trusted 期为 report_period 非空且 period_source != unknown；
+        - archived_path 仅在 status=done 且当前 artifact ready 时给出，
+          供从本地已校验 PDF 提取期末日（不触网）。
+        """
+        conn = self.connection()
+        rows = conn.execute(
+            """SELECT m.report_id, m.source_id, m.report_period,
+                      m.period_source, m.status, m.current_artifact_id,
+                      a.local_path, a.media_type, a.state
+               FROM manifest m LEFT JOIN artifacts a
+                 ON a.artifact_id = m.current_artifact_id
+               WHERE m.market=? AND m.symbol=?""", (market, symbol)).fetchall()
+        return {
+            r["source_id"]: {
+                "report_id": r["report_id"],
+                "report_period": r["report_period"],
+                "period_source": r["period_source"],
+                "archived_path": (r["local_path"]
+                                  if r["status"] == "done"
+                                  and r["state"] == "ready" else None),
+                "media_type": r["media_type"],
+            } for r in rows}
+
     def manifest_rows(self, market: str | None = None,
                       symbol: str | None = None) -> list[dict]:
         sql = ("SELECT report_id, market, symbol, source_id, title, doc_type, "

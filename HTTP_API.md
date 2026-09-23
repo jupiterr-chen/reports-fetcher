@@ -1,6 +1,6 @@
 # 一期 HTTP 服务契约
 
-日期：2026-09-20；**I5 已实现（2026-09-21，v0.5.0）**，验收记录见 [ITERATION_PLAN.md](./ITERATION_PLAN.md) I5 状态；需求基线 [REQUIREMENTS.md](./REQUIREMENTS.md)。上游：[ARCHITECTURE.md](./ARCHITECTURE.md)；内部设计：[DESIGN.md](./DESIGN.md)。实现注记：本地无鉴权模式适用于回环监听或部署侧显式声明端口仅发布回环（环境变量 `RF_LOCAL_MODE=1`，compose serve 默认）；令牌经环境变量 `RF_API_TOKENS=client:token,…` 注入。
+日期：2026-09-20；**I5 已实现（2026-09-21，v0.5.0）**，验收记录见 [ITERATION_PLAN.md](./ITERATION_PLAN.md) I5 状态；需求基线 [REQUIREMENTS.md](./REQUIREMENTS.md)。上游：[ARCHITECTURE.md](./ARCHITECTURE.md)；内部设计：[DESIGN.md](./DESIGN.md)。实现注记：本地无鉴权模式适用于回环监听或部署侧显式声明端口仅发布回环（环境变量 `RF_LOCAL_MODE=1`，compose serve 默认）；令牌经环境变量 `RF_API_TOKENS=client:token,…` 注入。**v1.0.3（2026-09-23，RF-HK-QTR-DEFAULT-001）**：HK 默认类型加入 `QTR-HK`（§3），混合选择两阶段语义见 DESIGN §5.1。
 
 ## 1. 交付范围与运行方式
 
@@ -35,7 +35,7 @@ Idempotency-Key: app-a-20260920-001
   "last_n": 4,
   "forms_by_market": {
     "CN": ["Q1", "H1", "Q3", "FY"],
-    "HK": ["ANNUAL", "INTERIM"],
+    "HK": ["ANNUAL", "INTERIM", "QTR-HK"],
     "US": ["10-Q", "10-K", "20-F"]
   },
   "refresh": false
@@ -44,7 +44,9 @@ Idempotency-Key: app-a-20260920-001
 
 - `symbols`：1–50 项，单项最多 32 字符；规范化后重复项合并，结果保留输入别名。格式检查在提交时做，联网 resolve 在执行时做。
 - `last_n`：默认 4，范围 1–20；按设计中的报告分组和最新版本规则选择，不保证有 N 个财季。
-- `forms_by_market`：可省略；显式市场及类型必须在服务支持列表内；省略的市场用默认值。空数组、未知类型、一期未支持的 6-K/北交所，以及经 fixture 验证启用前的 QTR-HK，显式请求返回 422，不静默忽略。`10-K` 等基础类型同时匹配其可识别修订版。
+- `forms_by_market`：可省略；省略的市场使用生效默认值——CN `Q1/H1/Q3/FY`、HK `ANNUAL/INTERIM/QTR-HK`（v1.0.3 起 HK 默认纳入自愿披露的季度业绩）、US `10-Q/10-K/20-F`。显式市场及类型必须在服务支持列表内。空数组、未知类型、一期未支持的 6-K/北交所显式请求返回 422，不静默忽略。`10-K` 等基础类型同时匹配其可识别修订版。
+  - **HK 季度语义**：发行人已披露季度业绩时默认纳入候选、按最新财务报告期参与选择；没有季度材料时正常跳过——不算错误、不产生"缺少季报"质量警告，仍返回可用的年报/中报并允许用更早的完整报告填满 `last_n`。显式 `{"HK":["ANNUAL","INTERIM"]}` 只取完整报告，`{"HK":["QTR-HK"]}` 只取季度业绩；后者对无季度披露发行人是正常的 `no_reports`/`no_matching_reports` 结果。
+  - 省略 `forms_by_market` 与显式写出生效默认值视为同一请求（幂等 request_hash 按生效默认值计算）；显式旧类型集合（如 `{"HK":["ANNUAL","INTERIM"]}`）是不同请求，同键提交返回 409。
 - `refresh`：默认 false；true 重新验证并下载候选文件，保留旧文件版本；不改变报告组选择规则。
 - 请求体上限默认 64 KiB；拒绝未知字段。HTTP 不接受客户端 URL、Cookie、代理、任意 headers、输出目录、本地路径或配置文件路径。
 
@@ -82,7 +84,7 @@ X-Request-ID: req_example
 
 `progress.symbols_total` 等于提交时规范化去重后的代码数，从 queued 起即正确（不依赖已持久化结果）；`progress.symbols_finished` 只统计已持久化的证券结果。因此单代码任务在 queued/running 且尚无结果时应返回 `{"symbols_total": 1, "symbols_finished": 0}`，终态时 finished 等于该任务实际产出的证券结果数。
 
-质量警告只针对**选中且产出可用文件**的报告：未选入 `last_n` 的候选报告期未知等信息在 `coverage.notices` 聚合至多一次，不逐条进入 `warnings`。HK 归档 PDF 若在抓取后能从原文提取明确期末日，将补写 `report_period`/`period_source=document` 并撤下陈旧的未知期警告；已成功补全的报告不因该陈旧警告降级为 partial。`filing_date` 仅可作为文件名回退，绝不作 `report_period` 来源。
+质量警告只针对**选中且产出可用文件**的报告：未选入 `last_n` 的候选报告期未知等信息在 `coverage.notices` 聚合至多一次，不逐条进入 `warnings`。HK 混合选择（ANNUAL/INTERIM/QTR-HK）在冷库下会为判定报告期**有界预取**候选原文（每类型至多 `last_n` 个，按公告时间限定工作量；公告时间不写成报告期）：预取活动以说明性 notice 记录在 `coverage.notices`（可追溯、不计入 `downloaded/cached/failed`），未入选候选的临时文件在任务结束前清理，不影响最终统计与状态聚合。**例外（质量缺口）**：预取后报告期仍不可知的近期 ANNUAL/INTERIM（公告时间不早于最旧入选报告）可能被未知期置后而漏出 `last_n`，此时产生 `warnings` 并使证券 `partial`——不得在可能遗漏最新完整报告时返回 `succeeded`；其他可用类型继续返回。HK 归档 PDF 若在抓取后能从原文提取明确期末日，将补写 `report_period`/`period_source=document` 并撤下陈旧的未知期警告；已成功补全的报告不因该陈旧警告降级为 partial。`filing_date` 仅可作为文件名回退，绝不作 `report_period` 来源。
 
 ## 4. 状态、幂等与重启
 

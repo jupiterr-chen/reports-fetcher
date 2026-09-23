@@ -11,8 +11,9 @@
 - 子類別（方括号文本，实体反转义后）是 doc_type / 排除规则的权威来源：
   [年報]→ANNUAL、[中期/半年度報告]→INTERIM、[環境、社會及管治資料/報告]→
   排除（与财报同在 t1=40000，不可只按类别判定）；
-- t1=10000 + title=業績 可召回 [季度業績] 公告 → QTR-HK 显式可选类型
-  （默认不启用，REQUIREMENTS §8 决策 1；I0 fixture 验证通过）；
+- t1=10000 + title=業績 可召回 [季度業績] 公告 → QTR-HK；v1.0.3 起纳入
+  HK 默认类型（RF-HK-QTR-DEFAULT-001，发行人无季度材料时正常跳过），
+  显式 forms 仍可只取 ANNUAL/INTERIM 或只取 QTR-HK；
 - 单页返回窗口内全部结果；站点显示上限 1000 条，超限按年切窗（不做
   load-more 模拟）；
 - 免 Cookie/免预热；偶发 TLS 握手重置由传输层显式重试兜底；
@@ -399,7 +400,8 @@ class HKHkexnewsAdapter(BaseMarketAdapter):
                 warnings=result.warnings, budget=query.max_discovery_requests,
                 used_requests=used_requests)
 
-        # 检索 2：t1=10000 + title=業績 → QTR-HK（显式可选类型，默认不启用）
+        # 检索 2：t1=10000 + title=業績 → QTR-HK（v1.0.3 起默认启用；
+        # [中期業績]/[末期業績] 跳过，不与 INTERIM/ANNUAL 正文重复）
         if "QTR-HK" in valid_forms:
             used_requests, truncated = self._search_windows(
                 symbol, from_date, today, t1_code="10000", title="業績",
