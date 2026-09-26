@@ -20,11 +20,16 @@ class PeriodSource(str, Enum):
 
     DOCUMENT = 从已归档原文（HK PDF）中提取到明确期末日；仅在报告期仍未知
     时启用，且绝不覆盖既有的可信非 unknown 报告期。
+    ANNOUNCEMENT_TITLE = 报告期来自**同期间業績公告标题**写明的明确期末日
+    （RF-HK-PERIOD-EVIDENCE-001：部分发行人 PDF 正文缺 ToUnicode 映射，
+    文本判期不可用；公告标题是可提取的可靠来源字段，证据记录在
+    source_metadata.period_evidence）。
     """
 
     SOURCE_FIELD = "source_field"
     EXPLICIT_TITLE = "explicit_title"
     DOCUMENT = "document"
+    ANNOUNCEMENT_TITLE = "announcement_title"
     UNKNOWN = "unknown"
 
 
@@ -228,6 +233,10 @@ class DiscoveryResult:
     exhausted: bool = True               # 声明检索窗口是否穷尽
     truncated: bool = False              # 预算耗尽必须显式上报
     warnings: list[str] = field(default_factory=list)
+    # HK 業績公告判期证据（RF-HK-PERIOD-EVIDENCE-001）：{(doc_type, 年份):
+    # {"periods": set(iso), "rows": [{source_id,title,subcategory}]}}。
+    # 仅作文档判期失败后的兜底（document > announcement_title）。
+    period_evidence: dict = field(default_factory=dict)
 
 
 @dataclass

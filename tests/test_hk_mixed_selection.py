@@ -53,6 +53,23 @@ def _fixture_rows(name: str) -> list[dict]:
     return json.loads((FIXTURES / name).read_text(encoding="utf-8"))["rows"]
 
 
+def _no_final_results_yeji_page() -> str:
+    """真实 yeji 页结构上移除 [末期業績…] 行（无年度证据的最小组造）。"""
+    raw = _raw("search_00700_10000_yeji_2026.raw.html")
+    rows = re.findall(r"<tr[^>]*>.*?</tr>", raw, flags=re.S)
+    removed = 0
+    for row in rows:
+        if "末期業績" in row:
+            raw = raw.replace(row, "")
+            removed += 1
+    assert removed == 1
+    raw = raw.replace("共有 3 紀錄", "共有 2 紀錄")
+    count, parsed = parse_search_page(raw)
+    assert count == 2 and len(parsed) == 2
+    assert not any("末期業績" in (r["headline"] or "") for r in parsed)
+    return raw
+
+
 def _no_quarterly_yeji_page() -> str:
     """真实 yeji 页结构上移除 [季度業績] 行（无季度发行人的最小组造）。"""
     raw = _raw("search_00700_10000_yeji_2026.raw.html")
@@ -420,8 +437,12 @@ class TestExplicitForms:
                 ("INTERIM", "2025-06-30", "document"),
                 ("ANNUAL", "2024-12-31", "document"),
             ]
-            assert not any("t1code=10000" in url
-                           for _m, url, _kw in session.requests)
+            # RF-HK-PERIOD-EVIDENCE-001：業績检索现在始终执行（判期证据
+            # 采集），但 [季度業績] 候选仍不入池、无季度下载
+            yeji_calls = [url for _m, url, _kw in session.requests
+                          if "t1code=10000" in url]
+            assert len(yeji_calls) == 1
+            assert all(doc != "QTR-HK" for doc, _p, _s in seq)
         finally:
             service.close()
 
@@ -576,11 +597,14 @@ class TestPrefetchRobustness:
         排除。必须形成可追溯质量缺口（warning + partial），其他可用类型继续
         返回，且不产生 failed item 伪装或丢弃可用报告。
         """
+        # RF-HK-PERIOD-EVIDENCE-001 后 fixture 的 ANNUAL/2025 有证据兜底，
+        # 用去掉 [末期業績] 行的真实结构变体页保留原"近期判期失败可见缺口"
+        # 场景（证据回填后转为显式下载失败路径，由下方独立用例覆盖）
         failing = frozenset({"listedco/listconews/sehk/2026/0409/"
                              "2026040901232_c.pdf"})   # 2025 年報（近期）
         service, store, session = _harness(
             tmp_path, monkeypatch=monkeypatch, periods=_PERIODS_00700,
-            failing=failing)
+            failing=failing, page_10000=_no_final_results_yeji_page())
         try:
             batch = service.fetch(["0700.HK"], last_n=4)
             result = batch.results[0]
@@ -595,6 +619,33 @@ class TestPrefetchRobustness:
             # 其他可用类型（季度/中报）继续返回
             assert ("QTR-HK", "2026-03-31", "explicit_title") in seq
             assert any(doc == "INTERIM" for doc, _p, _s in seq)
+        finally:
+            service.close()
+
+    def test_evidence_rescued_candidate_then_download_fails_visible(
+            self, tmp_path, monkeypatch):
+        """RF-HK-PERIOD-EVIDENCE-001：证据回填使近期年報入选；其下载失败
+        必须显式可见（failed item + partial），不得静默遗漏或伪装成功。"""
+        failing = frozenset({"listedco/listconews/sehk/2026/0409/"
+                             "2026040901232_c.pdf"})   # 2025 年報（有证据）
+        service, store, session = _harness(
+            tmp_path, monkeypatch=monkeypatch, periods=_PERIODS_00700,
+            failing=failing)
+        try:
+            batch = service.fetch(["0700.HK"], last_n=4)
+            result = batch.results[0]
+            seq = _selected(store, result)
+            # 证据回填 → 2025 年報以已知期入选（announcement_title）
+            assert ("ANNUAL", "2025-12-31", "announcement_title") in seq
+            failed_items = [i for i in result.items
+                            if i.outcome == OUTCOME_FAILED]
+            assert len(failed_items) == 1
+            assert failed_items[0].source_id.endswith(
+                "2026/0409/2026040901232_c.pdf")
+            assert result.status == "partial"
+            # 其余三份可用报告不受影响
+            assert len([i for i in result.items
+                        if i.outcome != OUTCOME_FAILED]) == 3
         finally:
             service.close()
 
@@ -674,5 +725,62 @@ class TestJobServiceMixed:
             assert seq == [
                 ("INTERIM", "2026-06-30"), ("QTR-HK", "2026-03-31"),
                 ("ANNUAL", "2025-12-31"), ("QTR-HK", "2025-09-30")]
+        finally:
+            service.close()
+
+
+class TestPeriodEvidenceRescue:
+    """RF-HK-PERIOD-EVIDENCE-001：文档判期全灭（cid 字体）时的证据兜底。
+
+    复刻生产 1810.HK 场景：ANNUAL/INTERIM 原文提取全部失败，業績公告
+    标题证据使最新完整报告以已知期参与混合选择，不再被季度公告挤出。
+    """
+
+    def test_cid_font_reports_rescued_by_evidence(self, tmp_path, monkeypatch):
+        # periods 为空映射 → 所有 PDF "提取失败"（模拟小米 cid 字体）
+        service, store, session = _harness(
+            tmp_path, monkeypatch=monkeypatch, periods={},
+            extra_reports=[_real_production_q3_2025()])
+        try:
+            batch = service.fetch(["0700.HK"], last_n=4)
+            result = batch.results[0]
+            seq = _selected(store, result)
+            # 证据覆盖 INTERIM/2026 与 ANNUAL/2025 → 与季度穿插；
+            # 证据未覆盖的年份保持 unknown（document > announcement_title
+            # 的兜底顺序在此场景下无从体现：文档路径全灭）
+            assert seq == [
+                ("INTERIM", "2026-06-30", "announcement_title"),
+                ("QTR-HK", "2026-03-31", "explicit_title"),
+                ("ANNUAL", "2025-12-31", "announcement_title"),
+                ("QTR-HK", "2025-09-30", "explicit_title"),
+            ]
+            assert all(i.outcome == OUTCOME_DOWNLOADED for i in result.items)
+            # 证据可追溯：manifest 的 source_metadata 记录来源公告
+            import json as _json
+            raw = store.connection().execute(
+                "SELECT source_metadata_json FROM manifest WHERE source_id=?",
+                ("listedco/listconews/sehk/2026/0825/2026082500557_c.pdf",)
+            ).fetchone()
+            meta = _json.loads(raw["source_metadata_json"])
+            ev = meta.get("period_evidence", {})
+            assert ev.get("source_id", "").endswith("2026081200297_c.pdf")
+            assert ev.get("subcategory") == "中期業績"
+            # 入选 4 份报告期均已知 → 干净成功；证据未覆盖的旧年份不入选
+            # 且不污染结果警告（v1.0.2 起未选中候选不进入 warnings）
+            assert result.status == "ok"
+            assert not any("报告期未知" in w for w in result.warnings)
+        finally:
+            service.close()
+
+    def test_document_beats_announcement_evidence(self, tmp_path, monkeypatch):
+        """优先级：文档原文判期成功时证据不覆盖（document > 兜底）。"""
+        service, store, session = _harness(
+            tmp_path, monkeypatch=monkeypatch, periods=_PERIODS_00700,
+            extra_reports=[_real_production_q3_2025()])
+        try:
+            batch = service.fetch(["0700.HK"], last_n=4)
+            seq = _selected(store, batch.results[0])
+            assert seq[0] == ("INTERIM", "2026-06-30", "document")
+            assert seq[2] == ("ANNUAL", "2025-12-31", "document")
         finally:
             service.close()

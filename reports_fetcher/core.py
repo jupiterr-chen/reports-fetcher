@@ -510,6 +510,28 @@ class FetchService:
                                    report.source_id, e)
             else:
                 probe_failures.append(report)
+        # 阶段 C（RF-HK-PERIOD-EVIDENCE-001）：業績公告标题证据兜底。
+        # 优先级 document（报告自身原文）> announcement_title（同期间
+        # 業績公告标题）：仅对阶段 B 后报告期仍未知的 ANNUAL/INTERIM 候选
+        # 应用（含超出预取工作量的候选）；单年标签 + 唯一证据才回填。
+        evidence = getattr(discovery, "period_evidence", None) or {}
+        if evidence:
+            rescued = self._apply_period_evidence(unknown, evidence)
+            if rescued:
+                notes.append(
+                    f"{rescued} 份完整报告的报告期由同期间業績公告标题回填"
+                    f"（period_source=announcement_title，证据记录于 "
+                    f"source_metadata.period_evidence）")
+                probe_failures = [r for r in probe_failures
+                                  if r.report_period is None]
+        if probe_failures:
+            # 可观测性（RF-HK-PERIOD-EVIDENCE-001）：判期无果此前完全静默，
+            # 生产排查时日志无迹可循；聚合一条 WARNING（source_id 截断展示）
+            logger.warning(
+                "HK 报告期判定失败 %d 个候选（保留未知期参与选择）: %s%s",
+                len(probe_failures),
+                [r.source_id for r in probe_failures[:3]],
+                " …" if len(probe_failures) > 3 else "")
         if prefetched:
             notes.append(
                 f"为混合选择预取 {len(prefetched)} 个 HK 候选用于报告期判定"
@@ -526,6 +548,41 @@ class FetchService:
         if deadline_skipped:
             notes.append("任务时限临近，部分候选未做判期预取")
         return prefetched, notes, probe_failures
+
+    @staticmethod
+    def _apply_period_evidence(candidates: list[Report],
+                               evidence: dict) -> int:
+        """業績公告标题证据回填（阶段 C）；返回成功回填的候选数。
+
+        证据键 (doc_type, 年份)；候选须为未知期 ANNUAL/INTERIM 且带单年
+        标签；该键证据期末唯一才回填（跨年标签/歧义保持 unknown，铁律）。
+        period_source=announcement_title，证据来源写入
+        source_metadata.period_evidence（可追溯）。
+        """
+        from reports_fetcher.adapters.hk_hkexnews import _hk_title_year_label
+
+        rescued = 0
+        for report in candidates:
+            if report.report_period is not None:
+                continue
+            if report.doc_type not in ("ANNUAL", "INTERIM"):
+                continue
+            year = _hk_title_year_label(report.title)
+            if year is None:
+                continue
+            entry = evidence.get((report.doc_type, year))
+            if not entry or len(entry.get("periods") or ()) != 1:
+                continue
+            report.report_period = next(iter(entry["periods"]))
+            report.period_source = PeriodSource.ANNOUNCEMENT_TITLE
+            report.source_metadata.pop("period_warning", None)
+            rows = entry.get("rows") or []
+            if rows:
+                report.source_metadata["period_evidence"] = dict(rows[0])
+            rescued += 1
+            logger.info("業績公告证据回填报告期 %s %s <- %s",
+                        report.symbol, report.source_id, report.report_period)
+        return rescued
 
     @staticmethod
     def _omitted_probe_failures(failures: list[Report],

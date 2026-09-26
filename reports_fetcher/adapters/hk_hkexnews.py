@@ -271,6 +271,39 @@ def strip_jsonp(text: str, callback: str = "callback") -> str:
     return text[len(prefix):-1]
 
 
+def _explicit_end_date(title: str) -> str | None:
+    """标题中"截至 <年月日> 止"的完整明确日期；无法解析返回 None。"""
+    explicit = _HK_EXPLICIT_DATE_RE.search(title)
+    if not explicit:
+        return None
+    year = chinese_year(explicit.group("y"))
+    month = chinese_small_number(explicit.group("m"))
+    day = chinese_small_number(explicit.group("d"))
+    if year and month and day:
+        try:
+            return date(year, month, day).isoformat()
+        except ValueError:
+            return None  # 非日历日期 → 视为不可解析
+    return None
+
+
+def _hk_title_year_label(title: str) -> int | None:
+    """单年标签的年份（2025 年報 / 中期報告 2026 / 二零二四年年報）。
+
+    跨年标签（YYYY/NN）与无年份标签返回 None——这些形态没有可与
+    業績公告证据对齐的年份语义，不参与判期回填。
+    """
+    if _HK_CROSS_YEAR_RE.search(title):
+        return None
+    for pattern in (_HK_ANNUAL_YEAR_RE, _HK_INTERIM_YEAR_RE,
+                    _HK_INTERIM_YEAR_BEFORE_RE, _HK_CN_ANNUAL_YEAR_RE,
+                    _HK_CN_INTERIM_YEAR_RE):
+        match = pattern.search(title)
+        if match:
+            return chinese_year(match.group(1))
+    return None
+
+
 def parse_hk_title_period(title: str) -> tuple[str | None, PeriodSource,
                                                str | None]:
     """HK 标题 → (报告期, period_source, 警告|None)。
@@ -278,18 +311,12 @@ def parse_hk_title_period(title: str) -> tuple[str | None, PeriodSource,
     PHASE1_REVIEW T5：仅"明确期末日"（截至…止）可设期；单年标签与跨年
     标签都只包含年份语义、没有期末日证据 → null + unknown + 警告，
     不按 12-31/06-30 财季惯例拼接（AGENTS 数据质量铁律 / DESIGN §9）。
+    （单年标签的完整报告可在候选构建期经業績公告证据回填，见
+    _apply_period_evidence / RF-HK-PERIOD-EVIDENCE-001。）
     """
-    explicit = _HK_EXPLICIT_DATE_RE.search(title)
-    if explicit:
-        year = chinese_year(explicit.group("y"))
-        month = chinese_small_number(explicit.group("m"))
-        day = chinese_small_number(explicit.group("d"))
-        if year and month and day:
-            try:
-                return (date(year, month, day).isoformat(),
-                        PeriodSource.EXPLICIT_TITLE, None)
-            except ValueError:
-                pass  # 非日历日期 → 视为不可解析
+    explicit_period = _explicit_end_date(title)
+    if explicit_period:
+        return (explicit_period, PeriodSource.EXPLICIT_TITLE, None)
     if _HK_CROSS_YEAR_RE.search(title):
         # 跨年标签（如 2024/25 年報）：非日历年结公司，日历期末不可得
         return (None, PeriodSource.UNKNOWN,
@@ -391,24 +418,28 @@ class HKHkexnewsAdapter(BaseMarketAdapter):
             from_date = today.replace(year=today.year - query.max_lookback_years,
                                       day=28)
 
-        # 检索 1：t1=40000（財務報表/ESG）→ ANNUAL / INTERIM
+        # 检索 1（先行）：t1=10000 + title=業績 → QTR-HK 候选（v1.0.3 起
+        # 默认启用）+ [中期業績]/[末期業績] 判期证据（RF-HK-PERIOD-EVIDENCE-
+        # 001：公告标题自带明确期末日，与 PDF 字体无关；業績公告本身不作为
+        # 归档候选）。ANNUAL/INTERIM 在 forms 内时同样需要证据，故 HK 始终执行。
+        period_evidence: dict[tuple[str, int], dict] = result.period_evidence
+        if valid_forms & {"ANNUAL", "INTERIM", "QTR-HK"}:
+            used_requests, truncated = self._search_windows(
+                symbol, from_date, today, t1_code="10000", title="業績",
+                keep_doc_types={"QTR-HK"},
+                valid_forms=valid_forms, candidates=candidates,
+                warnings=result.warnings, budget=query.max_discovery_requests,
+                used_requests=used_requests, period_evidence=period_evidence)
+
+        # 检索 2：t1=40000（財務報表/ESG）→ ANNUAL / INTERIM（未知期时用
+        # 業績公告证据回填）
         if valid_forms & {"ANNUAL", "INTERIM"}:
             used_requests, truncated = self._search_windows(
                 symbol, from_date, today, t1_code="40000", title="",
                 keep_doc_types={"ANNUAL", "INTERIM"},
                 valid_forms=valid_forms, candidates=candidates,
                 warnings=result.warnings, budget=query.max_discovery_requests,
-                used_requests=used_requests)
-
-        # 检索 2：t1=10000 + title=業績 → QTR-HK（v1.0.3 起默认启用；
-        # [中期業績]/[末期業績] 跳过，不与 INTERIM/ANNUAL 正文重复）
-        if "QTR-HK" in valid_forms:
-            used_requests, truncated = self._search_windows(
-                symbol, from_date, today, t1_code="10000", title="業績",
-                keep_doc_types={"QTR-HK"},
-                valid_forms=valid_forms, candidates=candidates,
-                warnings=result.warnings, budget=query.max_discovery_requests,
-                used_requests=used_requests)
+                used_requests=used_requests, period_evidence=period_evidence)
 
         dates = [r.filing_date for r in candidates if r.filing_date]
         if dates:
@@ -424,7 +455,9 @@ class HKHkexnewsAdapter(BaseMarketAdapter):
                         keep_doc_types: set[str],
                         valid_forms: set[str], candidates: list[Report],
                         warnings: list[str], budget: int,
-                        used_requests: int) -> tuple[int, bool]:
+                        used_requests: int,
+                        period_evidence: dict | None = None
+                        ) -> tuple[int, bool]:
         """深链检索：整窗查询；超站点单页上限时按年切窗。返回 (请求数, truncated)。"""
         windows: list[tuple[date, date]] = [(from_date, to_date)]
         truncated = False
@@ -459,17 +492,51 @@ class HKHkexnewsAdapter(BaseMarketAdapter):
                 windows = _split_year_windows(win_from, win_to) + windows
                 continue
             for row in rows:
+                if period_evidence is not None and t1_code == "10000":
+                    self._collect_period_evidence(row, period_evidence)
                 self._append_candidate(row, symbol, keep_doc_types,
                                        valid_forms, candidates, warnings,
-                                       source_search=t1_code)
+                                       source_search=t1_code,
+                                       period_evidence=period_evidence)
         return used_requests, truncated
 
     # ------------------------------------------------------------ 候选构建
 
+    @staticmethod
+    def _collect_period_evidence(row: dict, evidence: dict) -> None:
+        """從業績公告行采集判期证据（RF-HK-PERIOD-EVIDENCE-001）。
+
+        子类别含 中期業績 → INTERIM 证据；含 末期業績 → ANNUAL 证据
+        （复合子类别如"末期業績 / 股息或分派 / …"同样命中）。标题必须
+        写出"截至…止"完整明确日期；按 (doc_type, 年份) 聚合，同期出现
+        多个不同期末视为歧义（回填侧跳过）。公告本身不作为归档候选。
+        """
+        headline = row.get("headline") or ""
+        sub_match = re.search(r"\[([^\]]+)\]", headline)
+        subcategory = (sub_match.group(1).strip() if sub_match else "")
+        if "中期業績" in subcategory:
+            ev_type = "INTERIM"
+        elif "末期業績" in subcategory:
+            ev_type = "ANNUAL"
+        else:
+            return
+        title = (row.get("title") or "").strip()
+        period = _explicit_end_date(title)
+        if not period:
+            return
+        file_link = (row.get("file_link") or "").lstrip("/")
+        entry = evidence.setdefault((ev_type, int(period[:4])),
+                                    {"periods": set(), "rows": []})
+        entry["periods"].add(period)
+        if file_link:
+            entry["rows"].append({"source_id": file_link, "title": title,
+                                  "subcategory": subcategory})
+
     def _append_candidate(self, row: dict, symbol: ResolvedSymbol,
                           keep_doc_types: set[str],
                           valid_forms: set[str], candidates: list[Report],
-                          warnings: list[str], *, source_search: str) -> None:
+                          warnings: list[str], *, source_search: str,
+                          period_evidence: dict | None = None) -> None:
         headline = row.get("headline") or ""
         sub_match = re.search(r"\[([^\]]+)\]", headline)
         subcategory = (sub_match.group(1).strip() if sub_match else "")

@@ -31,7 +31,7 @@ from reports_fetcher.models import (
 from reports_fetcher.period import chinese_small_number
 from reports_fetcher.selection import select_reports
 from reports_fetcher.symbol import normalize_symbol
-from tests.conftest import FakeResponse, make_config, make_transport
+from tests.conftest import FakeResponse, make_config, make_report, make_transport
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "hk"
 
@@ -278,14 +278,16 @@ class TestListReports:
         assert by_title["中期報告 2026"].source_url == (
             "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0825/"
             "2026082500557_c.pdf")
-        # v1.0.3（RF-HK-QTR-DEFAULT-001）：默认类型含 QTR-HK → 两类检索都发起。
-        # 该 fixture 的 40000 页无 [季度業績] 行，QTR-HK 候选为 0 属正常。
+        # v1.0.3：默认类型含 QTR-HK → 两类检索都发起；该 fixture 的 40000
+        # 页无 [季度業績] 行，QTR-HK 候选为 0 属正常。
+        # RF-HK-PERIOD-EVIDENCE-001：業績检索先行（判期证据须在 40000
+        # 候选构建前就绪）。
         search_calls = [r for r in session.requests
                         if r[1].startswith(SEARCH_URL_PREFIX)]
         assert len(search_calls) == 2
-        assert "t1code=40000" in search_calls[0][1]
-        assert "t1code=10000" in search_calls[1][1]
-        assert re.search(r"from=\d{8}&to=\d{8}", search_calls[0][1])
+        assert "t1code=10000" in search_calls[0][1]
+        assert "t1code=40000" in search_calls[1][1]
+        assert re.search(r"from=\d{8}&to=\d{8}", search_calls[1][1])
 
     def test_00700_selection_last_4(self):
         adapter, _ = _make_adapter([
@@ -350,8 +352,9 @@ class TestListReports:
         assert qtr.document_role is DocumentRole.FULL_REPORT
 
     def test_qtr_hk_with_default_mix(self):
-        pages = [_raw("search_00700_40000_3y.raw.html"),
-                 _raw("search_00700_10000_yeji_2026.raw.html")]
+        # 業績检索先行 → 先弹出 yeji 页（QTR + 判期证据），后 40000 页
+        pages = [_raw("search_00700_10000_yeji_2026.raw.html"),
+                 _raw("search_00700_40000_3y.raw.html")]
 
         def responder(method, url, **kwargs):
             return _html_response(pages.pop(0))
@@ -416,8 +419,8 @@ class TestListReports:
 
     def test_over_limit_splits_year_windows(self):
         # 真实结构上替换总数标记：1500 > 站点单页上限 1000 → 按年切窗。
-        # 显式 ANNUAL/INTERIM 保持单检索，隔离验证切窗行为本身（v1.0.3
-        # 默认 forms 含 QTR-HK 会同时发起 t1=10000 检索并各自切窗）。
+        # RF-HK-PERIOD-EVIDENCE-001 后显式 ANNUAL/INTERIM 也发起業績检索
+        # （证据采集）：两类检索面对同一超限页各自按年切窗（各 1+3 次）。
         raw = _raw("search_00700_40000_3y.raw.html").replace("共有 9 紀錄",
                                                              "共有 1500 紀錄")
         adapter, session = _make_adapter([
@@ -429,9 +432,13 @@ class TestListReports:
                             max_lookback_years=2,
                             max_discovery_requests=100)
         adapter.list_reports(resolved, query)
-        urls = [r[1] for r in session.requests
-                if r[1].startswith(SEARCH_URL_PREFIX)]
-        assert len(urls) == 1 + 3  # 整窗 1 次 + 3 个年窗（2026/2025/2024 部分）
+        all_urls = [r[1] for r in session.requests
+                    if r[1].startswith(SEARCH_URL_PREFIX)]
+        by_t1 = {code: [u for u in all_urls if f"t1code={code}" in u]
+                 for code in ("10000", "40000")}
+        assert len(by_t1["10000"]) == 1 + 3   # 業績检索同样整窗 + 3 年窗
+        assert len(by_t1["40000"]) == 1 + 3   # 整窗 1 次 + 3 个年窗
+        urls = by_t1["40000"]  # 年窗形状断言沿用 40000 检索
 
         def _date_of(url: str, key: str) -> date:
             raw_value = re.search(rf"{key}=(\d{{8}})", url).group(1)
@@ -449,3 +456,84 @@ class TestListReports:
         assert windows[0] == (date(2026, 1, 1), date(2026, 8, 20))
         assert windows[1] == (date(2025, 1, 1), date(2025, 12, 31))
         assert windows[2] == (date(2024, 3, 15), date(2024, 12, 31))
+
+
+class TestPeriodEvidence:
+    """RF-HK-PERIOD-EVIDENCE-001：業績公告标题判期证据采集。"""
+
+    def test_evidence_collected_from_yeji_fixture(self):
+        adapter, _ = _make_adapter([
+            (PREFIX_URL_PREFIX, _jsonp_response(_PREFIX_00700_BODY)),
+            (SEARCH_URL_PREFIX,
+             _html_response(_raw("search_00700_10000_yeji_2026.raw.html"))),
+        ])
+        resolved = _resolve_00700(adapter)
+        discovery = adapter.list_reports(
+            resolved, ReportQuery(last_n=4, forms=["ANNUAL", "INTERIM"]))
+        evidence = discovery.period_evidence
+        assert {("INTERIM", 2026): {"2026-06-30"},
+                ("ANNUAL", 2025): {"2025-12-31"}} == \
+            {k: set(v["periods"]) for k, v in evidence.items()}
+        interim_row = evidence[("INTERIM", 2026)]["rows"][0]
+        assert interim_row["source_id"].endswith("2026081200297_c.pdf")
+        assert "中期業績" in interim_row["subcategory"]
+        # 業績公告本身不入候选池（仅作证据）；forms 无 QTR-HK → 候选为空
+        assert discovery.reports == []
+
+    def test_evidence_titles_from_real_1810_forms(self):
+        """生产 1810 实测标题形态（含空格变体与复合子类别）。"""
+        from reports_fetcher.adapters.hk_hkexnews import (
+            HKHkexnewsAdapter,
+            _explicit_end_date,
+            _hk_title_year_label,
+        )
+
+        evidence: dict = {}
+        row = {
+            "headline": "公告及通告 - [中期業績]",
+            "title": "截至2026 年6 月30 日止三個月及六個月之業績公告",
+            "file_link": "/listedco/listconews/sehk/2026/0818/"
+                         "2026081801015_c.pdf",
+        }
+        HKHkexnewsAdapter._collect_period_evidence(row, evidence)
+        assert set(evidence[("INTERIM", 2026)]["periods"]) == {"2026-06-30"}
+
+        compound = {
+            "headline": "公告及通告 - [末期業績 &#x2f; 股息或分派]",
+            "title": "截至2025年12月31日止年度之全年業績公告",
+            "file_link": "/listedco/listconews/sehk/2026/0324/"
+                         "2026032400609_c.pdf",
+        }
+        HKHkexnewsAdapter._collect_period_evidence(compound, evidence)
+        assert set(evidence[("ANNUAL", 2025)]["periods"]) == {"2025-12-31"}
+        assert "末期業績" in evidence[("ANNUAL", 2025)]["rows"][0]["subcategory"]
+
+        assert _hk_title_year_label("2026年中期報告") == 2026
+        assert _hk_title_year_label("2025 年報") == 2025
+        assert _hk_title_year_label("二零二四年年報") == 2024
+        assert _hk_title_year_label("2024/25 年報") is None
+        assert _hk_title_year_label("季度報告") is None
+        assert _explicit_end_date("截至2026 年6 月30 日止三個月") == "2026-06-30"
+
+    def test_ambiguous_evidence_not_applied(self):
+        """同期两条不同期末 → 歧义，阶段 C 不回填。"""
+        from reports_fetcher.adapters.hk_hkexnews import HKHkexnewsAdapter
+        from reports_fetcher.core import FetchService
+
+        evidence: dict = {}
+        HKHkexnewsAdapter._collect_period_evidence(
+            {"headline": "公告及通告 - [中期業績]",
+             "title": "截至二零二六年六月三十日止六個月之業績公告",
+             "file_link": "/x/a_c.pdf"}, evidence)
+        HKHkexnewsAdapter._collect_period_evidence(
+            {"headline": "公告及通告 - [中期業績]",
+             "title": "截至二零二六年七月三十一日止六個月之業績公告",
+             "file_link": "/x/b_c.pdf"}, evidence)
+        assert set(evidence[("INTERIM", 2026)]["periods"]) == \
+            {"2026-06-30", "2026-07-31"}
+        candidate = make_report(market=Market.HK, symbol="01810",
+                                doc_type="INTERIM", title="2026年中期報告",
+                                report_period=None,
+                                period_source=PeriodSource.UNKNOWN)
+        assert FetchService._apply_period_evidence([candidate], evidence) == 0
+        assert candidate.report_period is None
