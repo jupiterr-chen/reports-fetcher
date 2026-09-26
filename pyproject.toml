@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "reports-fetcher"
-version = "1.0.3"
+version = "1.0.4"
 description = "A股/港股/美股定期财报原文获取与归档（CLI，Docker 主力运行方式）"
 requires-python = ">=3.11"
 dependencies = [

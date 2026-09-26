@@ -1,6 +1,6 @@
 # RF-HK-PERIOD-EVIDENCE-001 · 業績公告标题判期回填（v1.0.4）
 
-日期：2026-09-26。状态：已批准（方案 A，用户 2026-09-26 拍板；B/OCR 与 C/排序改动不采用）。
+日期：2026-09-26。状态：**✅ 已实现**（方案 A，用户 2026-09-26 拍板；B/OCR 与 C/排序改动不采用）。实现要点：证据随 DiscoveryResult 传递，core 阶段 C 兜底（document > announcement_title 优先级）；375 单测 + 37 integration-kit 全绿；生产 1810 验证见 DEPLOY.md v1.0.4 记录。
 
 ## 背景与根因（生产排查留证）
 
