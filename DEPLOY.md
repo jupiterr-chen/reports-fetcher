@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-2026-09-26 10:40（Asia/Shanghai）：**v1.0.5 已完成升级部署及目标机验证（1810.HK 判期修复），服务运行中。** 部署提交为 `8069fb09f88e42e056937481f46cca6e90453dae`。本次为两连发：v1.0.4（業績公告标题判期回填，`41d3b12`）生产验证时发现小米年报「年度報告」标题变体缺口，当日补发 v1.0.5。v1.0.1–v1.0.4 上线记录作为历史保留在下文。
+2026-09-26 10:45（Asia/Shanghai）：**归档已迁移至存储卷 `/vol2/1000/10.Develop/reports-fetcher/reports`（SMB 共享 `\fnos.Develop` 内），v1.0.5 服务运行正常。** v1.0.5（`8069fb0`）为此前当日两连发的最终版本；v1.0.1–v1.0.4 上线记录作为历史保留在下文。存储迁移详情见文末「归档迁移到存储卷」一节。
 
 服务目录：`/home/chen/dev/reports-fetcher`；宿主入口：`http://127.0.0.1:8000`，仅服务器本机监听；其他机器通过 SSH 隧道调用（下文有命令）。本次采用回环本地模式，未配置应用令牌或对外发布端口。
 
@@ -410,3 +410,27 @@ v1.0.4 上线后 1810 验证（`v104-1810-verify-001`）：**9 份 INTERIM（201
 | `/openapi.json` | 版本 1.0.5 |
 
 用户原始诉求（8 月发布的半年报）已满足：最新入选第一项即 2026-09-23 发布的《2026年中期報告》（report_period=2026-06-30，其業績公告 2026-08-18 为证据）。旧 release、镜像、入口备份均保留；未修改归档外的其他项目。
+
+## 归档迁移到存储卷（2026-09-26，非版本发布）
+
+### 目的与路径
+
+用户需求：财报文件落存储盘（非系统盘）并对局域网 SMB 可见。`/vol2/1000/10.Develop` 本就是 fnOS 按用户（chen）导出的 SMB 共享（`users/1000.share.conf`，writeable、hide unreadable），归档迁入即自动可达，无需改动 SMB 配置。
+
+| 项 | 值 |
+|---|---|
+| 归档新路径 | `/vol2/1000/10.Develop/reports-fetcher/reports`（btrfs，680G 可用） |
+| SMB 路径 | `\fnos.Developeports-fetchereports`（用户认证后可见；用户级共享匿名枚举不可见属 fnOS 预期行为） |
+| 旧归档 | `/home/chen/dev/reports-fetcher/shared/reports` **原样保留作回滚备份**；`compose.deploy.yml.systemdisk-bak` 为挂载修改前备份 |
+| 挂载变更 | `compose.deploy.yml` volumes 首行指向新路径；新增 `entrypoint` 包装 `umask 022`（新文件 755/644，root 写、SMB 用户只读） |
+
+### 迁移步骤（已执行）
+
+停服（释放 flock/SQLite 干净关闭）→ `cp -a` → 校验（源/目标文件数一致 38、`PRAGMA integrity_check=ok`、33 artifacts）→ 改挂载 → `up -d` → 验证：health ok、reports 读取正常、同幂等键重放 200、按 ID 下载 ETag=sha256 匹配；refresh 任务新 artifact 权限 755 且旧版本保留（多版本并存验证）。存量文件以 `chmod -R a+rX` 放开只读。
+
+### SMB 使用注意（重要）
+
+- **请勿通过 SMB 写入或删除归档内任何文件**，尤其 `archive.sqlite3*`（SQLite 对 SMB 并发写敏感，可能损坏索引）；局域网机器请以只读方式取用 PDF/HTML。
+- 程序化取文件建议走 HTTP（`/api/v1/reports/{id}/file`，含校验与 304）；SMB 适合人肉浏览/拷贝。
+- Windows 首次访问：资源管理器打开 `\fnos.Develop`（或 `net use \fnos.Develop /user:chen`），输入 NAS 密码后勾选记住凭据。
+- 回滚：`compose-release.sh stop serve` → 恢复 `compose.deploy.yml.systemdisk-bak` → `up -d --no-deps serve`（旧归档未动）。
