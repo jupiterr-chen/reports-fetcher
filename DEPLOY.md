@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-2026-09-23 10:55（Asia/Shanghai）：**v1.0.3 已完成评审、升级部署及目标机 HTTP 验收，服务运行中。** 部署提交为 `26c648d53133eec646677ca95acafe8a6165c960`，镜像为 `reports-fetcher:26c648d53133eec646677ca95acafe8a6165c960`。v1.0.1 与 v1.0.2 上线记录作为历史保留在下文。
+2026-09-26 10:40（Asia/Shanghai）：**v1.0.5 已完成升级部署及目标机验证（1810.HK 判期修复），服务运行中。** 部署提交为 `8069fb09f88e42e056937481f46cca6e90453dae`。本次为两连发：v1.0.4（業績公告标题判期回填，`41d3b12`）生产验证时发现小米年报「年度報告」标题变体缺口，当日补发 v1.0.5。v1.0.1–v1.0.4 上线记录作为历史保留在下文。
 
 服务目录：`/home/chen/dev/reports-fetcher`；宿主入口：`http://127.0.0.1:8000`，仅服务器本机监听；其他机器通过 SSH 隧道调用（下文有命令）。本次采用回环本地模式，未配置应用令牌或对外发布端口。
 
@@ -368,3 +368,45 @@ sh /home/chen/dev/reports-fetcher/compose-release.sh restart serve
 4. 服务切换和两次受控重启的启动窗口内出现短暂 connection reset；带上限重试的 ready 探测随后返回 200，日志显示应用正常 startup，最终容器重启计数 0。
 
 生产服务当前为 v1.0.3。旧 release、镜像、固定入口和原生产配置备份均保留；未执行递归删除、移动或权限变更，也未修改其他项目。回滚前应先确认 SQLite schema 兼容，再恢复 v1.0.2 固定入口与配置备份并执行 `up -d --no-deps serve`。
+
+## v1.0.4 → v1.0.5 升级上线记录（2026-09-26）
+
+### 背景与发布门禁
+
+生产排查（2026-09-26，用户授权只读排查+探针）：`1810.HK`（小米）`last_n=10` 只返回季度公告——小米历年定期报告 PDF 正文缺 ToUnicode 映射，文本判期恒 None，未知期完整报告被已知期季度挤出。修复方案 A（用户拍板）：業績公告标题判期回填（任务书 [HK_PERIOD_EVIDENCE_TASK.md](HK_PERIOD_EVIDENCE_TASK.md)；B/OCR 与 C/排序不采用）。
+
+- v1.0.4 提交 `41d3b12f972929ee111250e49ebe57a893f1c5b6`；v1.0.5 提交 `8069fb09f88e42e056937481f46cca6e90453dae`（`v1.0.5` 标签）。
+- 本地 Docker 全量测试：两版均 **375 passed，2 warnings**（新增 6 项专项：证据采集/1810 真实标题形态/歧义/生产场景复刻/优先级/证据回填后下载失败可见）。
+- integration-kit：**37 tests OK，28.159 秒**。
+
+### v1.0.4 生产验证发现并当日修复
+
+v1.0.4 上线后 1810 验证（`v104-1810-verify-001`）：**9 份 INTERIM（2018–2026）全部回填成功、中报排序第一**，但 3 份 ANNUAL 仍未回填。容器内探针定位：小米年报 title 为「2025**年度報告**」（年度報告变体，非「2025 年報」），年份标签正则不识别 → `year_label=None` → 证据无从匹配；同期证据键 ANNUAL/2018–2025 已确认齐备。补正则后发 v1.0.5。
+
+### 制品与切换（v1.0.5）
+
+| 项目 | 实际值 |
+|---|---|
+| 完成时间 | 2026-09-26 10:40:34 +08:00 |
+| 源码 release | `/home/chen/dev/reports-fetcher/releases/8069fb09f88e42e056937481f46cca6e90453dae` |
+| 上传包 | `releases/reports-fetcher-8069fb09f88e42e056937481f46cca6e90453dae.tar`，1177600 bytes |
+| 包 SHA-256 | `472b3e9772b7599ddf3ad574c04da2a935a1463baceb28f636d38eadb1fc42c8`（本地与远端一致） |
+| 镜像 | `reports-fetcher:8069fb09f88e42e056937481f46cca6e90453dae`（构建约 40s） |
+| 镜像自检 | `python -m reports_fetcher version` → 1.0.5；`PeriodSource.ANNOUNCEMENT_TITLE`、pdfminer 可导入 |
+| 固定运维入口 | `compose-release.sh` 已固定 v1.0.5 SHA；v1.0.4 入口备份 `compose-release-41d3b12f972929ee111250e49ebe57a893f1c5b6.sh` |
+| 端口 / 模式 | 宿主 `127.0.0.1:8000`，回环本地模式，RestartCount=0 |
+
+### 生产定向验收（v1.0.5）
+
+任务 `v105-1810-verify-001`（`job_3795525beab3477992fd`）：`01810`、`last_n=10`、省略 forms。
+
+| 检查 | 结果 |
+|---|---|
+| 任务终态 | **succeeded**（此前 partial+11 份判期失败警告 → 现零警告）；downloaded=3、cached=7、failed=0 |
+| 入选顺序（按报告期穿插） | 中报 2026-06-30 → Q1 2026-03-31 → **年报 2025-12-31** → Q3 2025-09-30 → 中报 2025-06-30 → Q1 2025 → 年报 2024-12-31 → Q3 2024 → 中报 2024 → 年报 2023-12-31 |
+| 档案报告期 | 17 条 done 全部有期：ANNUAL×3 + INTERIM×4 = `announcement_title`（证据回填）；QTR-HK×10 = `explicit_title` |
+| 证据可追溯 | 2025 年报 `source_metadata.period_evidence` → 2026-03-24《截至2025年12月31日止年度之全年業績公告》[末期業績] |
+| 日志留痕 | 9 条「業績公告证据回填报告期」INFO（v1.0.4 验证窗口）；判期失败 WARNING 路径已由单测覆盖 |
+| `/openapi.json` | 版本 1.0.5 |
+
+用户原始诉求（8 月发布的半年报）已满足：最新入选第一项即 2026-09-23 发布的《2026年中期報告》（report_period=2026-06-30，其業績公告 2026-08-18 为证据）。旧 release、镜像、入口备份均保留；未修改归档外的其他项目。

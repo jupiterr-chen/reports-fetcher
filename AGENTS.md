@@ -2,9 +2,10 @@
 
 一句话：输入 A股/港股/美股代码 → 获取最新 N 份定期财报原文 → 按 市场/代码/财报日期 归档 + SQLite 索引；CLI + HTTP 双入口，Docker 为主力运行方式。
 
-## 当前状态（2026-09-23）——**v1.0.3 已部署生产**
+## 当前状态（2026-09-26）——**v1.0.5 已部署生产**
 
-- **v1.0.3（RF-HK-QTR-DEFAULT-001）已部署**：HK 默认类型为 `ANNUAL/INTERIM/QTR-HK`；混合选择两阶段（Store 可信期回填 + 冷库有界判期预取）修复冷/热库一致性。发布提交 `26c648d`，生产 0700.HK 省略 forms 得到中报、Q1、年报、Q3，缓存/幂等/ETag/重启读取均通过；详情见 [HK_QUARTERLY_DEFAULT_TASK.md](HK_QUARTERLY_DEFAULT_TASK.md) 与 [DEPLOY.md](DEPLOY.md)。
+- **v1.0.4→v1.0.5（RF-HK-PERIOD-EVIDENCE-001）已部署**：業績公告标题判期回填（document > announcement_title 兜底，证据可追溯），修复小米类 PDF 缺 ToUnicode 导致完整报告被季度挤出的生产问题；生产 1810.HK last_n=10 已验证（中报第一、年报/中报全部有期、任务 succeeded）。任务书 [HK_PERIOD_EVIDENCE_TASK.md](HK_PERIOD_EVIDENCE_TASK.md)；部署记录 [DEPLOY.md](DEPLOY.md)。
+- v1.0.3（RF-HK-QTR-DEFAULT-001，`26c648d`）：HK 默认类型含 QTR-HK；混合选择两阶段。生产 0700.HK 验证通过；详情见 [HK_QUARTERLY_DEFAULT_TASK.md](HK_QUARTERLY_DEFAULT_TASK.md)。
 - I0–I6 全部交付：三市场 CLI 归档（I3 起可用）、可靠性硬化（I4）、HTTP 服务（I5）、验收发布（I6）。
 - PHASE1_REVIEW T1–T7 已修复；生产联调反馈中的 HK 正文报告期提取/缓存回填、下载名、warning 范围、任务初始进度及 integration-kit 已在 v1.0.2（7f5fbad）修复。Docker 全量 353 项、integration-kit 33 项通过；v1.0.2 已部署至 chen@192.168.1.150:/home/chen/dev/reports-fetcher，并完成 0700.HK 缓存回填、幂等、文件下载/304 及重启读取验证，记录见 [DEPLOY.md](DEPLOY.md)。服务仅发布宿主 127.0.0.1:8000。
 - 验收留证：[docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)（ARCHITECTURE §10 逐条核对 + 冒烟矩阵 + 性能基线 + 偏差记录）；使用文档：[README.md](README.md)。
