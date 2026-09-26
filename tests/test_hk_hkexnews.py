@@ -511,6 +511,9 @@ class TestPeriodEvidence:
         assert _hk_title_year_label("2026年中期報告") == 2026
         assert _hk_title_year_label("2025 年報") == 2025
         assert _hk_title_year_label("二零二四年年報") == 2024
+        # 小米年报形态（生产实测 2026-09-26）：年度報告 变体
+        assert _hk_title_year_label("2025年度報告") == 2025
+        assert _hk_title_year_label("二零二五年度報告") == 2025
         assert _hk_title_year_label("2024/25 年報") is None
         assert _hk_title_year_label("季度報告") is None
         assert _explicit_end_date("截至2026 年6 月30 日止三個月") == "2026-06-30"

@@ -91,6 +91,16 @@ _HK_CN_ANNUAL_YEAR_RE = re.compile(
     r"([" + _CN_YEAR_CHARS + r"]{4})\s*年\s*年報")
 _HK_CN_INTERIM_YEAR_RE = re.compile(
     r"中期報告\s*[:：]?\s*([" + _CN_YEAR_CHARS + r"]{4})\s*年?")
+# "年度報告"变体（小米 2025年度報告，生产实测 2026-09-26）
+_HK_FISCAL_YEAR_RE = re.compile(r"(\d{4})\s*年度報告")
+_HK_CN_FISCAL_YEAR_RE = re.compile(
+    r"([" + _CN_YEAR_CHARS + r"]{4})\s*年度報告")
+# 年份标签正则全集（年份提取与"仅有年份标签"分类共用）
+_HK_YEAR_LABEL_PATTERNS = (
+    _HK_ANNUAL_YEAR_RE, _HK_INTERIM_YEAR_RE, _HK_INTERIM_YEAR_BEFORE_RE,
+    _HK_CN_ANNUAL_YEAR_RE, _HK_CN_INTERIM_YEAR_RE,
+    _HK_FISCAL_YEAR_RE, _HK_CN_FISCAL_YEAR_RE,
+)
 
 _LABEL_PREFIX_RE = re.compile(
     r"^(?:發放時間|股份代號|股份簡稱|文件)\s*[:：]\s*")
@@ -295,9 +305,7 @@ def _hk_title_year_label(title: str) -> int | None:
     """
     if _HK_CROSS_YEAR_RE.search(title):
         return None
-    for pattern in (_HK_ANNUAL_YEAR_RE, _HK_INTERIM_YEAR_RE,
-                    _HK_INTERIM_YEAR_BEFORE_RE, _HK_CN_ANNUAL_YEAR_RE,
-                    _HK_CN_INTERIM_YEAR_RE):
+    for pattern in _HK_YEAR_LABEL_PATTERNS:
         match = pattern.search(title)
         if match:
             return chinese_year(match.group(1))
@@ -321,9 +329,7 @@ def parse_hk_title_period(title: str) -> tuple[str | None, PeriodSource,
         # 跨年标签（如 2024/25 年報）：非日历年结公司，日历期末不可得
         return (None, PeriodSource.UNKNOWN,
                 "跨年标签（非日历年结公司），日历期末不可得，不猜测")
-    for pattern in (_HK_ANNUAL_YEAR_RE, _HK_INTERIM_YEAR_RE,
-                    _HK_INTERIM_YEAR_BEFORE_RE, _HK_CN_ANNUAL_YEAR_RE,
-                    _HK_CN_INTERIM_YEAR_RE):
+    for pattern in _HK_YEAR_LABEL_PATTERNS:
         if pattern.search(title):
             return (None, PeriodSource.UNKNOWN,
                     "仅有年份标签、无期末日证据，不猜测")
