@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-2026-09-26 10:45（Asia/Shanghai）：**归档已迁移至存储卷 `/vol2/1000/10.Develop/reports-fetcher/reports`（SMB 共享 `\fnos.Develop` 内），v1.0.5 服务运行正常。** v1.0.5（`8069fb0`）为此前当日两连发的最终版本；v1.0.1–v1.0.4 上线记录作为历史保留在下文。存储迁移详情见文末「归档迁移到存储卷」一节。
+2026-10-01 11:45（Asia/Shanghai）：**v1.0.6（归档平面索引 INDEX.csv/INDEX.md）已完成部署及生产验证，服务运行中**；归档自 2026-09-26 起位于存储卷 `/vol2/1000/10.Develop/reports-fetcher/reports`（SMB `\fnos.Develop`）。 v1.0.5（`8069fb0`）为此前当日两连发的最终版本；v1.0.1–v1.0.4 上线记录作为历史保留在下文。存储迁移详情见文末「归档迁移到存储卷」一节。
 
 服务目录：`/home/chen/dev/reports-fetcher`；宿主入口：`http://127.0.0.1:8000`，仅服务器本机监听；其他机器通过 SSH 隧道调用（下文有命令）。本次采用回环本地模式，未配置应用令牌或对外发布端口。
 
@@ -420,7 +420,9 @@ v1.0.4 上线后 1810 验证（`v104-1810-verify-001`）：**9 份 INTERIM（201
 | 项 | 值 |
 |---|---|
 | 归档新路径 | `/vol2/1000/10.Develop/reports-fetcher/reports`（btrfs，680G 可用） |
-| SMB 路径 | `\fnos.Developeports-fetchereports`（用户认证后可见；用户级共享匿名枚举不可见属 fnOS 预期行为） |
+| SMB 路径 | `\fnos.Develop
+eports-fetcher
+eports`（用户认证后可见；用户级共享匿名枚举不可见属 fnOS 预期行为） |
 | 旧归档 | `/home/chen/dev/reports-fetcher/shared/reports` **原样保留作回滚备份**；`compose.deploy.yml.systemdisk-bak` 为挂载修改前备份 |
 | 挂载变更 | `compose.deploy.yml` volumes 首行指向新路径；新增 `entrypoint` 包装 `umask 022`（新文件 755/644，root 写、SMB 用户只读） |
 
@@ -434,3 +436,24 @@ v1.0.4 上线后 1810 验证（`v104-1810-verify-001`）：**9 份 INTERIM（201
 - 程序化取文件建议走 HTTP（`/api/v1/reports/{id}/file`，含校验与 304）；SMB 适合人肉浏览/拷贝。
 - Windows 首次访问：资源管理器打开 `\fnos.Develop`（或 `net use \fnos.Develop /user:chen`），输入 NAS 密码后勾选记住凭据。
 - 回滚：`compose-release.sh stop serve` → 恢复 `compose.deploy.yml.systemdisk-bak` → `up -d --no-deps serve`（旧归档未动）。
+
+## v1.0.6 升级上线记录（2026-10-01）
+
+### 范围
+
+知识库对接反馈补全：SQLite 权威索引之外提供零工具门槛的平面索引——`INDEX.csv`（全版本、UTF-8 BOM、含 is_current）与 `INDEX.md`（按市场/代码分组、当前版、含公司简称）；由任务终态/CLI 收尾自动刷新（best-effort），也可独立运行。发布提交 `26054cdec6f1b428dd765ed2469cf77c41e82df9`；本地 Docker 全量 **379 passed**（新增 4 项：CSV/MD 内容、多版本 is_current、空库、任务终态自动刷新）。
+
+| 项目 | 实际值 |
+|---|---|
+| 源码 release / 镜像 | `releases/26054cdec6f1b428dd765ed2469cf77c41e82df9` / 同标签镜像 |
+| 包 SHA-256 | `c64a8c82fe79a57a5070849c03377b899258ed62612a342d521bc3e9c2cf4f92`（双端一致） |
+| 固定入口 | `compose-release.sh` 已固定 v1.0.6；v1.0.5 入口备份保留 |
+| 回滚入口 | `compose-release-8069fb09f88e42e056937481f46cca6e90453dae.sh` |
+
+### 生产定向验收
+
+任务 `v106-index-gen-001`（三市场 cached，job succeeded）终态后自动生成：
+
+- `INDEX.csv`：50 行（表头+49 版本），BOM 存在（Excel 中文正常），is_current 列与库一致，相对路径可直接拼 SMB 路径；
+- `INDEX.md`：48 份当前版按 `CN/HK/US → 代码（公司简称）` 分组，报告期倒序，含中文类型标签；
+- 权限 `755`（umask 022 生效，SMB 用户可读）；`ARCHIVE_LAYOUT.md` §0 与排除清单已更新并镜像至归档根 `README.md`。
