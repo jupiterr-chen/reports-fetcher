@@ -143,11 +143,22 @@ def _print_warnings(warnings: list[str]) -> None:
         print(f"  警告: {warning}")
 
 
+def _refresh_flat_index(service: FetchService) -> None:
+    """CLI 抓取后刷新 INDEX.csv/INDEX.md（快速定位用，best-effort）。"""
+    from reports_fetcher.index_export import export_index
+
+    try:
+        export_index(service.store.root)
+    except Exception as e:  # noqa: BLE001 - 索引失败不影响命令结果
+        print(f"说明: 平面索引刷新失败（不影响抓取结果）: {e}")
+
+
 def _cmd_fetch(service: FetchService, args: argparse.Namespace) -> int:
     symbols = _read_symbols(args)
     batch: BatchResult = service.fetch(
         symbols, last_n=args.last, forms=_parse_forms(args.forms),
         refresh=bool(getattr(args, "refresh", False)))
+    _refresh_flat_index(service)
     for raw, error in batch.invalid:
         print(f"[invalid_symbol] {raw}: {error}")
     for result in batch.results:

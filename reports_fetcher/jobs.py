@@ -357,7 +357,18 @@ class JobService:
 
         status = self._aggregate_status(symbol_statuses, job_id)
         self._finish_job(job_id, status, summary)
+        self._refresh_flat_index()
         logger.info("任务完成 %s status=%s summary=%s", job_id, status, summary)
+
+    def _refresh_flat_index(self) -> None:
+        """任务终态后刷新 INDEX.csv/INDEX.md（快速定位用，best-effort）。"""
+        from reports_fetcher.index_export import export_index
+
+        try:
+            stats = export_index(self.store.root)
+            logger.info("平面索引已刷新: %s", stats)
+        except Exception as e:  # noqa: BLE001 - 索引失败绝不影响任务
+            logger.warning("平面索引刷新失败: %s", e)
 
     def _aggregate_status(self, symbol_statuses: list[str],
                           job_id: str) -> str:
