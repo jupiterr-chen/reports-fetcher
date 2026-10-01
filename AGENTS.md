@@ -2,8 +2,9 @@
 
 一句话：输入 A股/港股/美股代码 → 获取最新 N 份定期财报原文 → 按 市场/代码/财报日期 归档 + SQLite 索引；CLI + HTTP 双入口，Docker 为主力运行方式。
 
-## 当前状态（2026-09-26）——**v1.0.5 已部署生产**
+## 当前状态（2026-10-01）——**v1.0.6 已部署生产**
 
+- **v1.0.6（平面索引）已部署**：归档根自动生成 INDEX.csv（Excel/工具，含 is_current 全版本）与 INDEX.md（人读分组索引），任务终态/CLI 收尾自动刷新；归档位于 `/vol2/1000/10.Develop/reports-fetcher/reports`（SMB `\fnos.Develop`），对接指南 [docs/ARCHIVE_LAYOUT.md](docs/ARCHIVE_LAYOUT.md)。
 - **v1.0.4→v1.0.5（RF-HK-PERIOD-EVIDENCE-001）已部署**：業績公告标题判期回填（document > announcement_title 兜底，证据可追溯），修复小米类 PDF 缺 ToUnicode 导致完整报告被季度挤出的生产问题；生产 1810.HK last_n=10 已验证（中报第一、年报/中报全部有期、任务 succeeded）。任务书 [HK_PERIOD_EVIDENCE_TASK.md](HK_PERIOD_EVIDENCE_TASK.md)；部署记录 [DEPLOY.md](DEPLOY.md)。
 - v1.0.3（RF-HK-QTR-DEFAULT-001，`26c648d`）：HK 默认类型含 QTR-HK；混合选择两阶段。生产 0700.HK 验证通过；详情见 [HK_QUARTERLY_DEFAULT_TASK.md](HK_QUARTERLY_DEFAULT_TASK.md)。
 - I0–I6 全部交付：三市场 CLI 归档（I3 起可用）、可靠性硬化（I4）、HTTP 服务（I5）、验收发布（I6）。
